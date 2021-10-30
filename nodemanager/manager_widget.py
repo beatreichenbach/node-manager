@@ -9,22 +9,30 @@ from PySide2 import QtWidgets, QtCore, QtGui
 try:
     from . import gui_utils
     from . import utils
+    from . import manager
 except ImportError:
     import gui_utils
     import utils
+    import manager
 
 
 class ManagerWidget(QtWidgets.QWidget):
-    def __init__(self, parent=None, dcc=''):
+    def __init__(self, parent=None, dcc='', context='', node=''):
         super(ManagerWidget, self).__init__(parent)
 
         self.setObjectName('ManagerWidget')
         self.dcc = dcc
+        self.context = context
+        self.node = node
         self.init_ui()
-        self.settings = utils.Settings()
 
-        # self.connect_ui()
-        self.load_settings()
+        plugin = '_'.join((self.dcc, self.context, self.node))
+        self.manager = manager.Manager.from_plugin(plugin)
+
+        self.nodes_view.setModel(self.manager.model)
+
+        self.action_widget.updateActions()
+        self.connect_ui()
 
     def init_ui(self):
         gui_utils.load_ui(self, 'manager_widget.ui')
@@ -36,34 +44,17 @@ class ManagerWidget(QtWidgets.QWidget):
 
         self.list_lay.removeWidget(self.nodes_view)
         self.nodes_view = NodesView()
-        self.node_model = NodesModel()
-        self.nodes_view.setModel(self.node_model)
         self.list_lay.insertWidget(0, self.nodes_view)
 
-        self.node_model.populate()
+        self.list_lay.removeWidget(self.action_widget)
+        self.action_widget = ActionWidget(self)
+        self.list_lay.insertWidget(1, self.action_widget)
 
-    def save_settings(self):
-        logging.debug('save_settings')
-        self.settings.setValue('manager_widget/pos', self.pos())
-        self.settings.setValue('manager_widget/size', self.size())
+        self.setStyleSheet('QTableView::item {border: 0px; padding: 0px 10px;}')
 
-    def load_settings(self):
-        logging.debug('load_settings')
-        if self.settings.value('manager_widget/pos'):
-            self.move(self.settings.value('manager_widget/pos'))
-        if self.settings.value('manager_widget/size'):
-            self.resize(self.settings.value('manager_widget/size'))
+    def connect_ui(self):
+        self.load_btn.clicked.connect(self.manager.load)
 
-    def reject(self):
-        self.save_settings()
-        super(ManagerDialog, self).reject()
-
-    def closeEvent(self, event):
-        self.save_settings()
-        event.accept()
-
-    def updateActions(self):
-        self.
 
 class NodesView(QtWidgets.QTableView):
     def __init__(self, parent=None):
@@ -72,8 +63,11 @@ class NodesView(QtWidgets.QTableView):
         self.setSelectionBehavior(self.SelectRows)
         self.setAlternatingRowColors(True)
         self.setShowGrid(False)
+        self.setSortingEnabled(True)
 
         self.horizontalHeader().setStretchLastSection(True)
+        self.horizontalHeader().setSortIndicatorShown(True)
+        self.horizontalHeader().setSectionsMovable(True)
         self.verticalHeader().hide()
 
 
@@ -81,9 +75,35 @@ class ActionWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super(ActionWidget, self).__init__(parent)
 
-        self.layout = QtWidgets.QVBoxLayout()
-        self.setLayout(self.layout)
-        
+        self.setLayout(QtWidgets.QVBoxLayout())
+        self.groups = {}
+        self.parent = parent
+
+    def clear(self):
+        while self.layout().count():
+            child = self.layout().takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+        self.groups = {}
+
+    def updateActions(self):
+        self.clear()
+        for action in self.parent.manager.actions.values():
+            group_grp = self.groups.get(action.group)
+            if not group_grp:
+                group_grp = QtWidgets.QGroupBox(action.group)
+                group_lay = QtWidgets.QVBoxLayout()
+                group_grp.setLayout(group_lay)
+                self.layout().addWidget(group_grp)
+                self.groups[action.group] = group_grp
+
+            button = QtWidgets.QPushButton(action.text)
+            button.clicked.connect(action.func)
+            group_grp.layout().addWidget(button)
+
+        self.layout().addStretch(1)
+
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)

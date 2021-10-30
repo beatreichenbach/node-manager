@@ -31,13 +31,13 @@ class ManagerDialog(QtWidgets.QDialog):
         self.settings = utils.Settings()
 
         self.context = None
+        self.manager_widget = None
 
         self.init_ui()
 
         self.connect_ui()
-        self.load_settings()
-
         self.context_changed()
+        self.load_settings()
 
     def init_ui(self):
         gui_utils.load_ui(self, 'manager_dialog.ui')
@@ -90,6 +90,7 @@ class ManagerDialog(QtWidgets.QDialog):
         super(ManagerDialog, self).reject()
 
     def closeEvent(self, event):
+        logging.debug('closeEvent')
         self.save_settings()
         event.accept()
 
@@ -98,12 +99,19 @@ class ManagerDialog(QtWidgets.QDialog):
         self.settings.setValue('manager_dialog/pos', self.pos())
         self.settings.setValue('manager_dialog/size', self.size())
 
+        manager_widget = self.manager_tab.currentWidget()
+        self.settings.setValue('manager_widget/splitter', manager_widget.splitter.sizes())
+
     def load_settings(self):
         logging.debug('load_settings')
         if self.settings.value('manager_dialog/pos'):
             self.move(self.settings.value('manager_dialog/pos'))
         if self.settings.value('manager_dialog/size'):
             self.resize(self.settings.value('manager_dialog/size'))
+
+        if self.settings.list('manager_widget/splitter'):
+            manager_widget = self.manager_tab.currentWidget()
+            manager_widget.splitter.setSizes(self.settings.list('manager_widget/splitter'))
 
     def edit_settings(self):
         os.startfile(self.settings.fileName())
@@ -156,7 +164,7 @@ class ManagerDialog(QtWidgets.QDialog):
         self.manager_tab.clear()
         logging.debug('update_tabs')
         for node in sorted(plugin_utils.node_plugins(self.dcc, self.context)):
-            widget = manager_widget.ManagerWidget(self)
+            widget = manager_widget.ManagerWidget(self, self.dcc, self.context, node)
             self.manager_tab.addTab(widget, node.title())
 
 if __name__ == '__main__':

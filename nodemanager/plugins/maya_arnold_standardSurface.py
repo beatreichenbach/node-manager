@@ -16,7 +16,7 @@ class Manager(maya.Manager):
     @property
     def attributes(self):
         '''
-        texture_node = cmds.shadingNode('aiImage', asTexture=True)
+        texture_node = cmds.shadingNode('aiStandardSurface', asTexture=True)
         attrs = cmds.listAttr(texture_node, write=True, connectable=True)
         attrs = [attr for attr in attrs if attr[-1] not in ['R', 'G', 'B', 'X', 'Y', 'Z']]
         print(attrs)
@@ -24,40 +24,71 @@ class Manager(maya.Manager):
         '''
 
         attrs = [
-            'filename',
-            'colorSpace',
-            'filter',
-            # 'mipmapBias',
-            # 'singleChannel',
-            # 'startChannel',
-            # 'swrap',
-            # 'twrap',
-            # 'sscale',
-            # 'tscale',
-            # 'sflip',
-            # 'tflip',
-            # 'soffset',
-            # 'toffset',
-            # 'swapSt',
-            # 'uvcoords',
-            # 'uvset',
-            'multiply',
-            # 'offset',
-            'ignoreMissingTextures',
-            # 'missingTextureColorA',
-            # 'missingTextureColor',
-            # 'aiUserOptions',
-            'autoTx',
-            # 'colorManagementConfigFileEnabled',
-            # 'colorManagementConfigFilePath',
-            # 'colorManagementEnabled',
-            # 'colorProfile',
-            'colorSpace',
-            # 'workingSpace',
-            # 'useFrameExtension',
-            # 'frame',
-            # 'ignoreColorSpaceFileRules'
+            'normalCamera',
+            # 'aiEnableMatte',
+            # 'aiMatteColor',
+            # 'aiMatteColorA',
+            # 'base',
+            'baseColor',
+            # 'diffuseRoughness',
+            # 'specular',
+            'specularColor',
+            'specularRoughness',
+            # 'specularAnisotropy',
+            # 'specularRotation',
+            'metalness',
+            # 'transmission',
+            'transmissionColor',
+            # 'transmissionDepth',
+            # 'transmissionScatter',
+            # 'transmissionScatterAnisotropy',
+            # 'transmissionDispersion',
+            # 'transmissionExtraRoughness',
+            # 'transmitAovs',
+            # 'subsurface',
+            'subsurfaceColor',
+            # 'subsurfaceRadius',
+            # 'subsurfaceScale',
+            # 'subsurfaceAnisotropy',
+            # 'subsurfaceType',
+            # 'sheen',
+            # 'sheenColor',
+            # 'sheenRoughness',
+            # 'thinWalled',
+            # 'tangent',
+            # 'coat',
+            # 'coatColor',
+            # 'coatRoughness',
+            # 'coatAnisotropy',
+            # 'coatRotation',
+            # 'coatNormal',
+            # 'thinFilmThickness',
+            # 'emission',
+            'emissionColor',
+            'opacity',
+            # 'caustics',
+            # 'internalReflections',
+            # 'exitToBackground',
+            # 'indirectDiffuse',
+            # 'indirectSpecular',
+            # 'aovId1',
+            # 'id1',
+            # 'aovId2',
+            # 'id2',
+            # 'aovId3',
+            # 'id3',
+            # 'aovId4',
+            # 'id4',
+            # 'aovId5',
+            # 'id5',
+            # 'aovId6',
+            # 'id6',
+            # 'aovId7',
+            # 'id7',
+            # 'aovId8',
+            # 'id8'
             ]
+
 
         # extra attributes:
         attrs.insert(0, 'name')
@@ -87,7 +118,7 @@ class Manager(maya.Manager):
 
     def node_items(self):
         node_items = []
-        for node in cmds.ls(type='aiImage'):
+        for node in cmds.ls(type='aiStandardSurface'):
             node_items.append(self.node_item(node))
         return node_items
 
