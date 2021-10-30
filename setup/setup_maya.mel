@@ -1,0 +1,6 @@
+global proc nodemanager_setup() {
+	$cwd = dirname(dirname(substitute(".+: ", whatIs("nodemanager_setup"), "")));
+	$code = "import sys; cwd = r'" + $cwd + "'; sys.path.insert(1, cwd); from nodemanager import setup; setup.Installer.install('maya'); del setup; sys.path.remove(cwd)";
+    python($code);
+}
+nodemanager_setup;
