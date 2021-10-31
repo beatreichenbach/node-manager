@@ -124,3 +124,34 @@ class Enum(object):
             self._current = value
         elif value in self._enums.values():
             self._current = list(self._enums.values()).index(value)
+
+class FileSize(object):
+    factors = {
+        'KB': 1<<10,
+        'MB': 1<<20,
+        'GB': 1<<30,
+        'TB': 1<<40
+        }
+
+    unit = 'KB'
+
+    def __init__(self, bytes=0):
+        self.size = bytes
+
+    def __repr__(self):
+        return self.__str__()
+
+    def __str__(self):
+        text = '{:,.0f} {}'.format(self.size / (self.factors[self.unit]), self.unit)
+        return text
+
+    @classmethod
+    def from_file(cls, filepath):
+        if os.path.isfile(filepath):
+            size = os.path.getsize(filepath)
+        else:
+            size = 0
+        return cls(size)
+
+if __name__ == '__main__':
+    print(FileSize())

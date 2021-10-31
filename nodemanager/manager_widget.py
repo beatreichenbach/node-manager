@@ -104,40 +104,10 @@ class ManagerWidget(QtWidgets.QWidget):
 
         # fix this!!!
         self.nodes_view.update_header_actions()
-        self.set_delegates()
-
-    def set_delegates(self):
-        item = self.manager.model.item(0, 0)
-        if not item:
-            return
-
-        node = item.data()
-        for i, attribute in enumerate(self.manager.attributes):
-            value = getattr(node, attribute)
-
-            delegate = Delegate(self.nodes_view)
-            if isinstance(value, str):
-                pass
-            elif isinstance(value, int):
-                delegate = SpinBoxDelegate(self.nodes_view)
-            elif isinstance(value, float):
-                delegate = DoubleSpinBoxDelegate(self.nodes_view)
-            elif isinstance(value, bool):
-                pass
-                # delegate = CheckboxDelegate()
-            elif isinstance(value, list) and len(value) == 2:
-                pass
-            elif isinstance(value, list) and len(value) == 3:
-                pass
-            elif isinstance(value, QtGui.QColor):
-                pass
-                # delegate = ColorDelegate()
-            elif isinstance(value, utils.Enum):
-                delegate = EnumDelegate(self.nodes_view, enum=value)
 
 
-            if delegate:
-                self.nodes_view.setItemDelegateForColumn(i, delegate)
+        # this probably shouldn't be in here
+        self.nodes_view.set_delegates()
 
 
 class NodesView(QtWidgets.QTableView):
@@ -188,6 +158,40 @@ class NodesView(QtWidgets.QTableView):
             # prevent all columns to be hidden
             header.actions()[0].setChecked(True)
             self.setColumnHidden(0, False)
+
+    def set_delegates(self):
+        item = self.model().item(0, 0)
+        if not item:
+            return
+
+        node = item.data()
+        for i, attribute in enumerate(self.manager.attributes):
+            value = getattr(node, attribute)
+
+            delegate = None
+            if isinstance(value, str):
+                pass
+            elif isinstance(value, bool):
+                delegate = BoolDelegate(self)
+            elif isinstance(value, int):
+                pass
+                # delegate = SpinBoxDelegate(self)
+            elif isinstance(value, float):
+                pass
+                # delegate = DoubleSpinBoxDelegate(self)
+            elif isinstance(value, list) and len(value) == 2:
+                pass
+            elif isinstance(value, list) and len(value) == 3:
+                pass
+            elif isinstance(value, utils.Enum):
+                delegate = EnumDelegate(self, enum=value)
+            elif isinstance(value, utils.FileSize):
+                delegate = FileSizeDelegate(self)
+            elif isinstance(value, QtGui.QColor):
+                delegate = ColorDelegate(self)
+
+            if delegate:
+                self.setItemDelegateForColumn(i, delegate)
 
     def contextMenuEvent(self, event):
         item_index = self.indexAt(event.pos())
@@ -258,15 +262,40 @@ class DisplayWidget(QtWidgets.QWidget):
 
 
 
-class Delegate(QtWidgets.QStyledItemDelegate):
-    def closeEditor(self, editor, hint):
-        logging.debug(['closeEditor', editor.text()])
-        super(Delegate, self).closeEditor(editor, hint)
+# class Delegate(QtWidgets.QStyledItemDelegate):
+#     def closeEditor(self, editor, hint):
+#         logging.debug(['closeEditor', editor.text()])
+#         super(Delegate, self).closeEditor(editor, hint)
 
+class FileSizeDelegate(QtWidgets.QStyledItemDelegate):
+    def displayText(self, value, locale):
+        return str(value)
+
+class BoolDelegate(QtWidgets.QStyledItemDelegate):
+
+    def createEditor(self, parent, option, index):
+        editor = QtWidgets.QCheckBox(parent)
+        editor.stateChanged.connect(lambda: self.commitData.emit(editor))
+        return editor
+
+    def setEditorData(self, editor, index):
+        value = index.model().data(index, QtCore.Qt.EditRole)
+        editor.setChecked(value)
+
+    def setModelData(self, editor, model, index):
+        value = editor.isChecked()
+        model.setData(index, value, QtCore.Qt.EditRole)
+
+    def updateEditorGeometry(self, editor, option, index):
+        editor.setGeometry(option.rect)
+
+    def paint(self, painter, option, index):
+        if isinstance(self.parent(), QtWidgets.QAbstractItemView):
+            self.parent().openPersistentEditor(index)
 
 class SpinBoxDelegate(QtWidgets.QStyledItemDelegate):
     def createEditor(self, parent, option, index):
-        editor = QtWidgets.SpinBox(parent)
+        editor = QtWidgets.QSpinBox(parent)
         editor.setMinimum(-10000)
         editor.setMaximum(10000)
         return editor
@@ -323,13 +352,14 @@ class EnumDelegate(QtWidgets.QStyledItemDelegate):
     def setEditorData(self, editor, index):
         value = index.model().data(index, QtCore.Qt.EditRole)
         editor.setCurrentIndex(value.current)
-        editor.showPopup()
+        # editor.showPopup()
 
     def setModelData(self, editor, model, index):
         value = utils.Enum(self.enum.enums)
         value.current = editor.currentIndex()
         # model.setData(index, value, QtCore.Qt.EditRole)
 
+        # self.parent() unclean?
         for item_index in self.parent().selectionModel().selectedRows(index.column()):
             model.setData(item_index, value, QtCore.Qt.EditRole)
 
@@ -337,6 +367,74 @@ class EnumDelegate(QtWidgets.QStyledItemDelegate):
         editor.setGeometry(option.rect)
 
 
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG)
-    gui_utils.show(ManagerWidget)
+class ColorDelegate(QtWidgets.QStyledItemDelegate):
+    def displayText(self, value, locale):
+        return ''
+
+    def createEditor(self, parent, option, index):
+        value = index.model().data(index, QtCore.Qt.EditRole)
+        self.dialog = QtWidgets.QColorDialog(value, parent)
+
+        editor = QtWidgets.QWidget()
+
+        self.dialog.colorSelected.connect(lambda: self.colorSelected(editor))
+        # dialog.colorSelected.connect(lambda: editor.color = dialog.selectedColor())
+        # dialog.colorSelected.connect(lambda: self.commitData.emit(editor))
+        # dialog.colorSelected.connect(lambda: self.closeEditor.emit(editor, self.NoHint))
+
+        # dialog.open()
+
+        # color = QtWidgets.QColorDialog.getColor(value, parent)
+        # editor.color = color
+        # editor.setVisible(False)
+        self.closeEditor.connect(lambda: logging.debug('closeEditor'))
+        self.commitData.connect(lambda: logging.debug('commitData'))
+        # self.setModelData(editor, index.model(), index)
+
+        # logging.debug('createEditor')
+        # self.closeEditor.emit(editor, self.NoHint)
+        # self.commitData.emit(editor)
+
+        # self.closeEditor.connect(lambda: self.commitData.emit(editor))
+
+        # self.setModelData(editor, index.model(), index)
+        return editor
+
+
+    def colorSelected(self, editor):
+        logging.debug('colorSelected')
+        # editor.color = self.dialog.selectedColor()
+        self.commitData.emit(editor)
+        self.closeEditor.emit(editor, self.NoHint)
+
+    def setModelData(self, editor, model, index):
+        value = self.dialog.selectedColor()
+
+        if index.row() == 4:
+            logging.debug(('setModelData', value))
+
+        if not value.isValid():
+            return
+
+
+        for item_index in self.parent().selectionModel().selectedRows(index.column()):
+            model.setData(item_index, value, QtCore.Qt.EditRole)
+
+    def setEditorData(self, editor, index):
+        logging.debug('setEditorData')
+        value = index.model().data(index, QtCore.Qt.EditRole)
+        self.dialog.setCurrentColor(value)
+        self.dialog.open()
+
+    def updateEditorGeometry(self, editor, option, index):
+        editor.setGeometry(option.rect)
+
+    def paint(self, painter, option, index):
+        value = index.model().data(index, QtCore.Qt.EditRole)
+
+        if index.row() == 4:
+            logging.debug(('paint', value))
+
+        option.rect.adjust(5, 5, -5, -5)
+        painter.setBrush(value)
+        painter.drawRect(option.rect)

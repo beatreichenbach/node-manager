@@ -116,6 +116,8 @@ class Node(object):
     node = ''
     read_only_attrs = []
 
+    _file_size = None
+
     def __init__(self, node):
         self.node = node
 
@@ -162,9 +164,10 @@ class Node(object):
             if isinstance(value, str):
                 value = value.replace('\\', '/')
                 cmds.setAttr(attr, value, type='string')
-                logging.debug('cmds.setAttr('+attr+', '+value+', type=\'string\')')
             elif isinstance(value, utils.Enum):
                 cmds.setAttr(attr, value.current)
+            elif isinstance(value, QtGui.QColor):
+                cmds.setAttr(attr, *value.getRgbF(), type='double3')
             else:
                 cmds.setAttr(attr, value)
 
@@ -185,6 +188,7 @@ class Node(object):
 
     @filepath.setter
     def filepath(self, value):
+        self._file_size = None
         self.set_node_attr('filename', value)
 
     @property
@@ -211,20 +215,16 @@ class Node(object):
     def status(self):
         return 1.01
 
+
+    @status.setter
+    def status(self, value):
+        pass
+
     @property
     def file_size(self):
-        if not os.path.isfile(self.filepath):
-            return ''
+        if self._file_size is None:
+            self._file_size = utils.FileSize.from_file(self.filepath)
 
-        factors = {
-            'GB': 1<<30,
-            'MB': 1<<20,
-            'KB': 1<<10
-            }
-
-        unit = 'KB'
-        size = os.path.getsize(self.filepath)
-        text = '{:,.0f} {}'.format(size / (factors[unit]), unit)
-        return text
+        return self._file_size
 
 

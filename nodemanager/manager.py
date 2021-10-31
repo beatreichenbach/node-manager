@@ -94,25 +94,26 @@ class Manager(object):
                 item = QtGui.QStandardItem()
                 value = getattr(node_item, attribute)
 
+                text = value
                 if value is None:
                     text = ''
-                else:
-                    text = str(value)
+                # else:
+                #     text = str(value)
 
-                if isinstance(value, QtGui.QColor):
-                    text = '({}, {}, {})'.format(value.redF(), value.greenF(), value.blueF())
-                elif isinstance(value, bool):
-                    text = ''
+                # if isinstance(value, QtGui.QColor):
+                #     text = '({}, {}, {})'.format(value.redF(), value.greenF(), value.blueF())
+                # elif isinstance(value, bool):
+                    # text = ''
 
-                    item.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable)
-                    item.setCheckState(QtCore.Qt.Checked if value else QtCore.Qt.Unchecked)
+                    # item.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable)
+                    # item.setCheckState(QtCore.Qt.Checked if value else QtCore.Qt.Unchecked)
                 # elif isinstance(value, utils.Enum):
                 #     text = value.enums.get(value.current)
 
                 if attribute in node_item.read_only_attrs:
                     item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
 
-                item.setText(text)
+                item.setData(text, QtCore.Qt.DisplayRole)
                 item.setData(node_item)
 
                 if isinstance(value, utils.Enum):
