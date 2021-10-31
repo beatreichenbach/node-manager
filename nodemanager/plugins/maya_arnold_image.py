@@ -1,17 +1,22 @@
 from __future__ import absolute_import
 
-from maya import cmds
+import os
 import logging
-from . import maya
+from enum import Enum
 
+from maya import cmds
 from PySide2 import QtGui
+
+from . import maya
+from .. import utils
+
 
 class Manager(maya.Manager):
     display_name = 'Image'
     plugin_name = 'mtoa.mll'
 
-    def __init__(self):
-        super(Manager, self).__init__()
+    def __init__(self, *args):
+        super(Manager, self).__init__(*args)
 
     @property
     def attributes(self):
@@ -24,7 +29,7 @@ class Manager(maya.Manager):
         '''
 
         attrs = [
-            'filename',
+            # 'filename',
             'colorSpace',
             'filter',
             # 'mipmapBias',
@@ -59,8 +64,18 @@ class Manager(maya.Manager):
             # 'ignoreColorSpaceFileRules'
             ]
 
-        # extra attributes:
-        attrs.insert(0, 'name')
+        # set custom attributes:
+        attrs = [
+            'name',
+            'status',
+            'colorSpace',
+            'filter',
+            'file_size',
+            'filename',
+            'directory',
+            'autoTx',
+            'multiply'
+        ]
 
         return attrs
 
@@ -70,9 +85,8 @@ class Manager(maya.Manager):
         self.addAction('File', 'Relocate', None)
         self.addAction('File', 'Find Files', None)
         self.addAction('File', 'Open', None)
-        self.addAction('File', 'Open Directory', None)
+        self.addAction('File', 'Open Directory', self.open_directory)
 
-        self.addAction('Parameters', 'Set Parameters', None)
         self.addAction('Parameters', 'Auto Color Space', None)
         self.addAction('Parameters', 'Auto Filter', None)
 
@@ -92,29 +106,125 @@ class Manager(maya.Manager):
         return node_items
 
     def node_item(self, node):
-        name = node.rsplit('|')[-1]
-        node_item = Node(node)
-        for attribute in self.attributes:
-            try:
-                value = cmds.getAttr('{}.{}'.format(node, attribute))
-            except ValueError:
-                value = None
-
-            if attribute == 'name':
-                value = name
-
-            if isinstance(value, list):
-                color = QtGui.QColor.fromRgbF(*value[0])
-                value = color
-
-            node_item.attributes[attribute] = value
-        return node_item
+        return Node(node)
 
 
-
+    def open_directory(self):
+        os.startfile(self.selected_nodes()[-1].directory)
 
 class Node(object):
-    attributes = {}
+    node = ''
+    read_only_attrs = []
 
     def __init__(self, node):
         self.node = node
+
+        self.read_only_attrs.extend([
+            # 'status',
+            'file_size'
+            ])
+
+    def __getattr__(self, name):
+        return self.get_node_attr(name)
+
+    def __setattr__(self, name, value):
+        if name not in Node.__dict__:
+            self.set_node_attr(name, value)
+        else:
+            object.__setattr__(self, name, value)
+
+    def attr(self, name):
+        return '{}.{}'.format(self.node, name)
+
+    def has_node_attr(self, name):
+        return cmds.attributeQuery(name, node=self.node, exists=True)
+
+    def get_node_attr(self, name):
+        attr = self.attr(name)
+        try:
+            attr_type = cmds.getAttr(attr, type=True)
+            value = cmds.getAttr(attr)
+
+            if attr_type == 'float3':
+                value = QtGui.QColor.fromRgbF(*value[0])
+            elif attr_type == 'double3':
+                value = list(*value[0])
+            elif attr_type == 'enum':
+                enums = cmds.attributeQuery(name, node=self.node, listEnum=True)
+                value = utils.Enum(enums[0].split(':'), value)
+            return value
+        except ValueError:
+            raise AttributeError('No attribute matches name: {}'.format(attr))
+
+    def set_node_attr(self, name, value):
+        attr = self.attr(name)
+        try:
+            if isinstance(value, str):
+                value = value.replace('\\', '/')
+                cmds.setAttr(attr, value, type='string')
+                logging.debug('cmds.setAttr('+attr+', '+value+', type=\'string\')')
+            elif isinstance(value, utils.Enum):
+                cmds.setAttr(attr, value.current)
+            else:
+                cmds.setAttr(attr, value)
+
+        except ValueError:
+            raise AttributeError('No attribute matches name: {}'.format(attr))
+
+    @property
+    def name(self):
+        return self.node.rsplit('|')[-1]
+
+    @name.setter
+    def name(self, value):
+        self.node = cmds.rename(self.node, value)
+
+    @property
+    def filepath(self):
+        return self.get_node_attr('filename')
+
+    @filepath.setter
+    def filepath(self, value):
+        self.set_node_attr('filename', value)
+
+    @property
+    def filename(self):
+        return os.path.basename(self.filepath)
+
+    @filename.setter
+    def filename(self, value):
+        dirpath = os.path.abspath(self.filepath)
+        path = os.path.join(dirpath, value)
+        self.filepath = path
+
+    @property
+    def directory(self):
+        return os.path.dirname(self.filepath)
+
+    @directory.setter
+    def directory(self, value):
+        dirpath = os.path.abspath(value)
+        path = os.path.join(dirpath, self.filename)
+        self.filepath = path
+
+    @property
+    def status(self):
+        return 1.01
+
+    @property
+    def file_size(self):
+        if not os.path.isfile(self.filepath):
+            return ''
+
+        factors = {
+            'GB': 1<<30,
+            'MB': 1<<20,
+            'KB': 1<<10
+            }
+
+        unit = 'KB'
+        size = os.path.getsize(self.filepath)
+        text = '{:,.0f} {}'.format(size / (factors[unit]), unit)
+        return text
+
+

@@ -22,8 +22,8 @@ class Manager(manager.Manager):
     settings_defaults = {
         }
 
-    def __init__(self):
-        super(Manager, self).__init__()
+    def __init__(self, *args):
+        super(Manager, self).__init__(*args)
 
     def load_plugin(self):
         if not self.plugin_name:

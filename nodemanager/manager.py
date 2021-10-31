@@ -20,6 +20,17 @@ class NodesModel(QtGui.QStandardItemModel):
 
         self.manager = manager
 
+    def setData(self, index, value, role):
+
+        super(NodesModel, self).setData(index, value, role)
+
+        if role == QtCore.Qt.EditRole:
+            node = self.itemFromIndex(index).data()
+            attribute = self.manager.attributes[index.column()]
+            setattr(node, attribute, value)
+
+        return True
+
 
 class Manager(object):
     attributes = []
@@ -63,26 +74,61 @@ class Manager(object):
 
     def load(self):
         self.model.clear()
-        self.model.setHorizontalHeaderLabels(self.attributes)
+        labels = [attribute.replace('_', ' ').title() for attribute in self.attributes]
+        self.model.setHorizontalHeaderLabels(labels)
+
+        try:
+            self.load_plugin()
+        except RuntimeError:
+            QtWidgets.QMessageBox.warning(
+                self,
+                'Plugin Load Error',
+                'Unable to load plugin: {}'.format(self.plugin_name),
+                QtWidgets.QMessageBox.Ok)
+            return
+
 
         for node_item in self.node_items():
             items = []
-            for attribute, value in node_item.attributes.items():
+            for attribute in self.attributes:
                 item = QtGui.QStandardItem()
+                value = getattr(node_item, attribute)
 
-                text = str(value)
+                if value is None:
+                    text = ''
+                else:
+                    text = str(value)
+
                 if isinstance(value, QtGui.QColor):
                     text = '({}, {}, {})'.format(value.redF(), value.greenF(), value.blueF())
                 elif isinstance(value, bool):
                     text = ''
 
-                    item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
+                    item.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable)
                     item.setCheckState(QtCore.Qt.Checked if value else QtCore.Qt.Unchecked)
+                # elif isinstance(value, utils.Enum):
+                #     text = value.enums.get(value.current)
+
+                if attribute in node_item.read_only_attrs:
+                    item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
 
                 item.setText(text)
                 item.setData(node_item)
+
+                if isinstance(value, utils.Enum):
+                    item.setData(value, role=QtCore.Qt.DisplayRole)
                 items.append(item)
             self.model.appendRow(items)
+
+    def setActions(self):
+        pass
+
+    def selected_nodes(self):
+        nodes = []
+        for row in self.parent.nodes_view.selectionModel().selectedRows():
+            nodes.append(self.model.itemFromIndex(row).data())
+
+        return nodes
 
 
 class Action(object):

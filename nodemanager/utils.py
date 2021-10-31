@@ -87,3 +87,40 @@ class NoSelectionException(Exception):
 
 class NotFoundException(Exception):
     message = 'Not found.'
+
+
+class Enum(object):
+    def __init__(self, enums=[], current=None):
+        self._enums = {}
+        self._current = None
+        self.enums = enums
+        self.current = current
+
+    def __repr__(self):
+        return 'Enum({})'.format(repr({'current': self.current, 'enums': self._enums}))
+
+    @property
+    def enums(self):
+        return self._enums
+
+    @enums.setter
+    def enums(self, value):
+        if isinstance(value, list):
+            self._enums = {i: enum for i, enum in enumerate(value)}
+        elif isinstance(value, dict):
+            self._enums = value
+        else:
+            raise TypeError('Expected list or dict, got {} instead.'.format(type(value)))
+
+    @property
+    def current(self):
+        return self._current
+
+    @current.setter
+    def current(self, value):
+        if value is None:
+            return
+        if isinstance(value, int):
+            self._current = value
+        elif value in self._enums.values():
+            self._current = list(self._enums.values()).index(value)

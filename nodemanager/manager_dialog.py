@@ -35,9 +35,14 @@ class ManagerDialog(QtWidgets.QDialog):
 
         self.init_ui()
 
+        # currentIndex does not seem to trigger changed
         self.connect_ui()
         self.context_changed()
         self.load_settings()
+        self.tab_changed()
+
+
+        self.manager_widget.load()
 
     def init_ui(self):
         gui_utils.load_ui(self, 'manager_dialog.ui')
@@ -84,6 +89,7 @@ class ManagerDialog(QtWidgets.QDialog):
 
     def connect_ui(self):
         self.context_cmb.currentTextChanged.connect(self.context_changed)
+        self.manager_tab.currentChanged.connect(self.tab_changed)
 
     def reject(self):
         self.save_settings()
@@ -92,6 +98,7 @@ class ManagerDialog(QtWidgets.QDialog):
     def closeEvent(self, event):
         logging.debug('closeEvent')
         self.save_settings()
+        self.manager_widget.close()
         event.accept()
 
     def save_settings(self):
@@ -99,8 +106,8 @@ class ManagerDialog(QtWidgets.QDialog):
         self.settings.setValue('manager_dialog/pos', self.pos())
         self.settings.setValue('manager_dialog/size', self.size())
 
-        manager_widget = self.manager_tab.currentWidget()
-        self.settings.setValue('manager_widget/splitter', manager_widget.splitter.sizes())
+        tab = self.manager_tab.tabText(self.manager_tab.currentIndex())
+        self.settings.setValue('manager_dialog/tab', tab)
 
     def load_settings(self):
         logging.debug('load_settings')
@@ -109,9 +116,12 @@ class ManagerDialog(QtWidgets.QDialog):
         if self.settings.value('manager_dialog/size'):
             self.resize(self.settings.value('manager_dialog/size'))
 
-        if self.settings.list('manager_widget/splitter'):
-            manager_widget = self.manager_tab.currentWidget()
-            manager_widget.splitter.setSizes(self.settings.list('manager_widget/splitter'))
+        if self.settings.value('manager_dialog/tab'):
+            tab = self.settings.value('manager_dialog/tab')
+            for i in range(self.manager_tab.count()):
+                if self.manager_tab.tabText(i) == tab:
+                    self.manager_tab.setCurrentIndex(i)
+                    break
 
     def edit_settings(self):
         os.startfile(self.settings.fileName())
@@ -166,6 +176,15 @@ class ManagerDialog(QtWidgets.QDialog):
         for node in sorted(plugin_utils.node_plugins(self.dcc, self.context)):
             widget = manager_widget.ManagerWidget(self, self.dcc, self.context, node)
             self.manager_tab.addTab(widget, node.title())
+        self.manager_widget = self.manager_tab.currentWidget()
+
+    def tab_changed(self):
+        logging.debug('tab_changed')
+        if self.manager_widget:
+            self.manager_widget.save_settings()
+        self.manager_widget = self.manager_tab.currentWidget()
+        self.manager_widget.load_settings()
+
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
