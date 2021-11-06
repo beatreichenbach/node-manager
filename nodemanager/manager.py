@@ -32,6 +32,8 @@ class NodesModel(QtGui.QStandardItemModel):
         return True
 
 
+
+
 class Manager(object):
     attributes = []
 
@@ -41,14 +43,17 @@ class Manager(object):
     settings_group = ''
     settings_defaults = {
         }
-    actions = OrderedDict()
 
     def __init__(self, parent=None):
         self.settings = utils.Settings()
         self.init_settings()
         self.parent = parent
+        self.actions = OrderedDict()
+        self.filters = []
 
+        # these shouldn't exist, just put in init
         self.setActions()
+        self.setFilters()
 
         self.model = NodesModel(self)
 
@@ -72,8 +77,13 @@ class Manager(object):
 
         self.actions[action.hash()] = action
 
+    def addFilter(self, attribute):
+        if attribute not in self.filters:
+            self.filters.append(attribute)
+
     def load(self):
         self.model.clear()
+        # make this into function
         labels = [attribute.replace('_', ' ').title() for attribute in self.attributes]
         self.model.setHorizontalHeaderLabels(labels)
 
@@ -102,7 +112,7 @@ class Manager(object):
 
                 # if isinstance(value, QtGui.QColor):
                 #     text = '({}, {}, {})'.format(value.redF(), value.greenF(), value.blueF())
-                # elif isinstance(value, bool):
+                # if isinstance(value, bool):
                     # text = ''
 
                     # item.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable)
@@ -122,6 +132,9 @@ class Manager(object):
             self.model.appendRow(items)
 
     def setActions(self):
+        pass
+
+    def setFilters(self):
         pass
 
     def selected_nodes(self):

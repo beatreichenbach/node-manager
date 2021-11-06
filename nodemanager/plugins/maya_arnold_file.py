@@ -7,7 +7,7 @@ from . import maya
 from PySide2 import QtGui
 
 class Manager(maya.Manager):
-    display_name = 'Image'
+    display_name = 'File'
     plugin_name = 'mtoa.mll'
 
     def __init__(self):
@@ -125,19 +125,6 @@ class Manager(maya.Manager):
         self.addAction('File', 'Find Files', None)
         self.addAction('File', 'Open', None)
         self.addAction('File', 'Open Directory', None)
-
-        self.addAction('Parameters', 'Set Parameters', None)
-        self.addAction('Parameters', 'Auto Color Space', None)
-        self.addAction('Parameters', 'Auto Filter', None)
-
-        self.addAction('Tiled', 'Generate TX', None)
-        self.addAction('Tiled', 'Switch to Raw', None)
-        self.addAction('Tiled', 'Switch to TX', None)
-
-        self.addAction('Node', 'Convert', None)
-        self.addAction('Node', 'Remove', None)
-        self.addAction('Node', 'Show', None)
-        self.addAction('Node', 'Select Dependent Objects', None)
 
     def node_items(self):
         node_items = []

@@ -34,25 +34,30 @@ class ManagerWidget(QtWidgets.QWidget):
 
         self.init_ui()
 
+        sort_model = SortModel(self)
+        sort_model.setSortCaseSensitivity(QtCore.Qt.CaseInsensitive)
+        sort_model.setSourceModel(self.manager.model)
 
-        self.nodes_view.setModel(self.manager.model)
+        # self.nodes_view.setModel(self.manager.model)
+        self.nodes_view.setModel(sort_model)
 
-        self.action_widget.updateActions()
+        self.display_widget.filter_changed.connect(sort_model.update_filters)
+
+        self.action_widget.update_actions()
         self.connect_ui()
 
         self.load_settings()
 
+    #     self.filter = QtWidgets.QLineEdit()
+    #     self.layout().addWidget(self.filter)
+    #     self.filter.textChanged.connect(self.filter_changed)
 
-        self.filter = QtWidgets.QLineEdit()
-        self.layout().addWidget(self.filter)
-        self.filter.textChanged.connect(self.filter_changed)
-
-    def filter_changed(self):
-        text = self.filter.text()
-        for i in range(self.manager.model.rowCount()):
-            item = self.manager.model.item(i, 0)
-            match = text.lower() in item.data().name.lower()
-            self.nodes_view.setRowHidden(i, not match)
+    # def filter_changed(self):
+    #     text = self.filter.text()
+    #     for i in range(self.manager.model.rowCount()):
+    #         item = self.manager.model.item(i, 0)
+    #         match = text.lower() in item.data().name.lower()
+    #         self.nodes_view.setRowHidden(i, not match)
 
     def init_ui(self):
         gui_utils.load_ui(self, 'manager_widget.ui')
@@ -98,9 +103,20 @@ class ManagerWidget(QtWidgets.QWidget):
 
     def load(self):
         logging.debug('load')
+        self.save_settings()
         self.manager.load()
 
         self.load_settings()
+
+        # pure vomit
+        item = self.manager.model.item(0, 0)
+        if item:
+            node = item.data()
+            filters = {}
+            for i, attribute in enumerate(self.manager.attributes):
+                filters[attribute] = getattr(node, attribute)
+
+            self.display_widget.update_filters(filters)
 
         # fix this!!!
         self.nodes_view.update_header_actions()
@@ -126,7 +142,7 @@ class NodesView(QtWidgets.QTableView):
         self.setShowGrid(False)
         self.setSortingEnabled(True)
 
-        self.horizontalHeader().setStretchLastSection(True)
+        # self.horizontalHeader().setStretchLastSection(True)
         self.horizontalHeader().setSortIndicatorShown(True)
         self.horizontalHeader().setSectionsMovable(True)
         self.verticalHeader().hide()
@@ -137,7 +153,7 @@ class NodesView(QtWidgets.QTableView):
     def update_header_actions(self):
         header = self.horizontalHeader()
         for i in range(self.manager.model.columnCount()):
-            item = self.model().horizontalHeaderItem(i)
+            item = self.manager.model.horizontalHeaderItem(i)
 
             action = QtWidgets.QAction(item.text(), self)
             action.setCheckable(True)
@@ -160,7 +176,7 @@ class NodesView(QtWidgets.QTableView):
             self.setColumnHidden(0, False)
 
     def set_delegates(self):
-        item = self.model().item(0, 0)
+        item = self.manager.model.item(0, 0)
         if not item:
             return
 
@@ -168,9 +184,15 @@ class NodesView(QtWidgets.QTableView):
         for i, attribute in enumerate(self.manager.attributes):
             value = getattr(node, attribute)
 
-            delegate = None
+            delegate = Delegate(self)
             if isinstance(value, str):
                 pass
+            elif isinstance(value, utils.Enum):
+                delegate = EnumDelegate(self, enum=value)
+            elif isinstance(value, utils.FileSize):
+                delegate = FileSizeDelegate(self)
+            elif isinstance(value, QtGui.QColor):
+                delegate = ColorDelegate(self)
             elif isinstance(value, bool):
                 delegate = BoolDelegate(self)
             elif isinstance(value, int):
@@ -183,25 +205,43 @@ class NodesView(QtWidgets.QTableView):
                 pass
             elif isinstance(value, list) and len(value) == 3:
                 pass
-            elif isinstance(value, utils.Enum):
-                delegate = EnumDelegate(self, enum=value)
-            elif isinstance(value, utils.FileSize):
-                delegate = FileSizeDelegate(self)
-            elif isinstance(value, QtGui.QColor):
-                delegate = ColorDelegate(self)
 
             if delegate:
                 self.setItemDelegateForColumn(i, delegate)
 
-    def contextMenuEvent(self, event):
-        item_index = self.indexAt(event.pos())
 
-        if not self.manager.model.itemFromIndex(item_index).isEditable():
+            # if isinstance(value, bool):
+            #     for row in range(self.model().rowCount()):
+            #         index = self.model().index(row, i)
+            #         logging.debug(index)
+            #         self.openPersistentEditor(index)
+
+
+            # if isinstance(value, utils.FileSize):
+            #     values = []
+            #     for row in range(self.manager.model.rowCount()):
+            #         item = self.manager.model.item(row, i)
+            #         values.append(item.data(QtCore.Qt.EditRole))
+            #     logging.debug(values[0] > values[2])
+            #     logging.debug(values[2] > values[3])
+            #     logging.debug(values[2] < values[3])
+            #     logging.debug(values[2] > values[4])
+            #     logging.debug(values)
+            #     logging.debug(sorted(values))
+            #     logging.debug([value.size for value in values])
+
+    def contextMenuEvent(self, event):
+        index = self.indexAt(event.pos())
+
+        # map index from proxy sort to model
+        model_index = self.model().mapToSource(index)
+
+        if not self.manager.model.itemFromIndex(model_index).isEditable():
             return
 
         menu = QtWidgets.QMenu(self)
         action = menu.addAction('Edit Selected')
-        action.triggered.connect(lambda: self.edit(item_index))
+        action.triggered.connect(lambda: self.edit(index))
 
         # add other required actions
         menu.popup(event.globalPos())
@@ -224,8 +264,9 @@ class ActionWidget(QtWidgets.QWidget):
 
         self.groups = {}
 
-    def updateActions(self):
+    def update_actions(self):
         self.clear()
+        logging.debug(self.parent.manager.display_name)
         for action in self.parent.manager.actions.values():
             group_grp = self.groups.get(action.group)
             if not group_grp:
@@ -244,12 +285,13 @@ class ActionWidget(QtWidgets.QWidget):
 
 
 class DisplayWidget(QtWidgets.QWidget):
+    filter_changed = QtCore.Signal(dict)
     def __init__(self, parent):
         super(DisplayWidget, self).__init__(parent)
 
         self.parent = parent
         self.manager = parent.manager
-
+        self.filter_widgets = {}
 
         self.init_ui()
 
@@ -257,43 +299,167 @@ class DisplayWidget(QtWidgets.QWidget):
         self.setLayout(QtWidgets.QVBoxLayout())
 
         self.filter_grp = QtWidgets.QGroupBox('Filter')
+        self.filter_lay = QtWidgets.QFormLayout(self.filter_grp)
+        self.filter_grp.setLayout(self.filter_lay)
+
         self.layout().addWidget(self.filter_grp)
+        self.layout().addStretch(1)
+
+
+    def clear(self):
+        self.filter_widgets = {}
+        while self.filter_lay.count():
+            child = self.filter_lay.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+    def update_filters(self, filters):
+        self.clear()
+
+        # as with the delegates this should probably not depend on the value but some sort of attribute object that can hold enum.
+        for attribute, value in filters.items():
+            widget = None
+            if isinstance(value, str):
+                widget = QtWidgets.QLineEdit(self)
+                widget.textChanged.connect(self.filter_input_changed)
+            elif isinstance(value, bool):
+                widget = QtWidgets.QComboBox(self)
+                widget.addItems(('', 'Disabled', 'Enabled'))
+                widget.currentTextChanged.connect(self.filter_input_changed)
+                widget.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+            elif isinstance(value, utils.Enum):
+                widget = QtWidgets.QComboBox(self)
+                widget.addItem('')
+                for i, enum in value.enums.items():
+                    widget.addItem(enum, i)
+                widget.currentTextChanged.connect(self.filter_input_changed)
+                widget.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+
+
+            if widget:
+                self.filter_widgets[attribute]  = widget
+                # make title into func
+                self.filter_lay.addRow(attribute.replace('_', ' ').title(), widget)
+
+    def filter_input_changed(self):
+        # i hate that name
+        filters = {}
+
+        for attribute, widget in self.filter_widgets.items():
+            value = None
+            if isinstance(widget, QtWidgets.QLineEdit):
+                value = widget.text()
+            if isinstance(widget, QtWidgets.QComboBox):
+                # should be data?
+                value = widget.currentData()
+            if value is not None:
+                filters[attribute] = value
+
+        self.filter_changed.emit(filters)
+        logging.debug(filters)
 
 
 
+class SortModel(QtCore.QSortFilterProxyModel):
+    filters = {}
 
-# class Delegate(QtWidgets.QStyledItemDelegate):
-#     def closeEditor(self, editor, hint):
-#         logging.debug(['closeEditor', editor.text()])
-#         super(Delegate, self).closeEditor(editor, hint)
+    def value(self, value):
+        if isinstance(value, str):
+            if self.sortCaseSensitivity() == QtCore.Qt.CaseInsensitive:
+                return value.lower()
+        elif isinstance(value, QtGui.QColor):
+            return str(value)
+        return value
 
-class FileSizeDelegate(QtWidgets.QStyledItemDelegate):
-    def displayText(self, value, locale):
-        return str(value)
+    def lessThan(self, left, right):
+        left_value = self.value(self.sourceModel().data(left))
+        right_value = self.value(self.sourceModel().data(right))
+        return left_value < right_value
 
-class BoolDelegate(QtWidgets.QStyledItemDelegate):
+    def filterAcceptsRow(self, source_row, source_parent):
+        index = self.sourceModel().index(source_row, 0, source_parent)
+        index = self.sourceModel().index(source_row, 0)
+        node = self.sourceModel().data(index, QtCore.Qt.UserRole)
 
-    def createEditor(self, parent, option, index):
-        editor = QtWidgets.QCheckBox(parent)
-        editor.stateChanged.connect(lambda: self.commitData.emit(editor))
-        return editor
+        item = self.sourceModel().item(source_row, 0)
+        node = item.data()
 
-    def setEditorData(self, editor, index):
-        value = index.model().data(index, QtCore.Qt.EditRole)
-        editor.setChecked(value)
+        logging.debug(node)
+
+        for attribute, value in self.filters.items():
+            if isinstance(value, str):
+                if value.lower() not in getattr(node, attribute).lower():
+                    break
+
+            elif isinstance(value, int):
+                if value != int(getattr(node, attribute)):
+                    break
+        else:
+            return True
+
+        return False
+
+    def update_filters(self, filters):
+        self.filters = filters
+        self.setFilterRegExp('')
+        logging.debug('update_filters')
+
+
+
+class Delegate(QtWidgets.QStyledItemDelegate):
+    def set_user_property(self, editor, name):
+        def userProperty():
+            return name
+
+        metaobject = editor.metaObject()
+        index = metaobject.indexOfProperty(name)
+        metaobject.property(index)
+        editor.metaObject().userProperty = lambda: metaobject.property(index)
+
+        logging.debug(editor.metaObject().userProperty().name())
 
     def setModelData(self, editor, model, index):
-        value = editor.isChecked()
-        model.setData(index, value, QtCore.Qt.EditRole)
+        # Set ModelData on selection by default
+        logging.debug(editor.metaObject().userProperty().name())
+
+        # self.parent() unclean?
+        indexes = self.parent().selectionModel().selectedRows(index.column())
+        indexes.append(index)
+        for item_index in indexes:
+            super(Delegate, self).setModelData(editor, model, item_index)
 
     def updateEditorGeometry(self, editor, option, index):
         editor.setGeometry(option.rect)
 
-    def paint(self, painter, option, index):
-        if isinstance(self.parent(), QtWidgets.QAbstractItemView):
-            self.parent().openPersistentEditor(index)
+class FileSizeDelegate(Delegate):
+    def displayText(self, value, locale):
+        return str(value)
 
-class SpinBoxDelegate(QtWidgets.QStyledItemDelegate):
+class BoolDelegate(Delegate):
+    def displayText(self, value, locale):
+        return 'Enabled' if value else 'Disabled'
+
+    def createEditor(self, parent, option, index):
+        editor = QtWidgets.QComboBox(parent)
+        editor.setFocusPolicy(QtCore.Qt.StrongFocus)
+        editor.addItems(('Disabled', 'Enabled'))
+        editor.currentIndexChanged.connect(lambda: self.commitData.emit(editor))
+        editor.currentIndexChanged.connect(lambda: self.closeEditor.emit(editor, self.NoHint))
+        return editor
+
+    def setEditorData(self, editor, index):
+        value = index.model().data(index, QtCore.Qt.EditRole)
+        editor.setCurrentIndex(value.current)
+
+    def setModelData(self, editor, model, index):
+        value.current = bool(editor.currentIndex())
+
+        # self.parent() unclean?
+        for item_index in self.parent().selectionModel().selectedRows(index.column()):
+            model.setData(item_index, value, QtCore.Qt.EditRole)
+
+
+class SpinBoxDelegate(Delegate):
     def createEditor(self, parent, option, index):
         editor = QtWidgets.QSpinBox(parent)
         editor.setMinimum(-10000)
@@ -309,10 +475,7 @@ class SpinBoxDelegate(QtWidgets.QStyledItemDelegate):
         value = editor.value()
         model.setData(index, value, QtCore.Qt.EditRole)
 
-    def updateEditorGeometry(self, editor, option, index):
-        editor.setGeometry(option.rect)
-
-class DoubleSpinBoxDelegate(QtWidgets.QStyledItemDelegate):
+class DoubleSpinBoxDelegate(Delegate):
     def createEditor(self, parent, option, index):
         editor = QtWidgets.QDoubleSpinBox(parent)
         editor.setMinimum(-10000)
@@ -328,11 +491,8 @@ class DoubleSpinBoxDelegate(QtWidgets.QStyledItemDelegate):
         value = editor.value()
         model.setData(index, value, QtCore.Qt.EditRole)
 
-    def updateEditorGeometry(self, editor, option, index):
-        editor.setGeometry(option.rect)
 
-
-class EnumDelegate(QtWidgets.QStyledItemDelegate):
+class EnumDelegate(Delegate):
     def __init__(self, *args, enum):
         super(EnumDelegate, self).__init__(*args)
         self.enum = enum
@@ -343,7 +503,9 @@ class EnumDelegate(QtWidgets.QStyledItemDelegate):
     def createEditor(self, parent, option, index):
         editor = QtWidgets.QComboBox(parent)
         editor.setFocusPolicy(QtCore.Qt.StrongFocus)
-        editor.addItems(self.enum.enums.values())
+
+        for i, enum in self.enum.enums.items():
+            editor.addItem(enum, i)
         editor.setCurrentText(self.enum.enums.get(self.enum.current))
         editor.currentIndexChanged.connect(lambda: self.commitData.emit(editor))
         editor.currentIndexChanged.connect(lambda: self.closeEditor.emit(editor, self.NoHint))
@@ -356,6 +518,7 @@ class EnumDelegate(QtWidgets.QStyledItemDelegate):
 
     def setModelData(self, editor, model, index):
         value = utils.Enum(self.enum.enums)
+        # should this be currentData since some enums might not be linear?
         value.current = editor.currentIndex()
         # model.setData(index, value, QtCore.Qt.EditRole)
 
@@ -363,78 +526,74 @@ class EnumDelegate(QtWidgets.QStyledItemDelegate):
         for item_index in self.parent().selectionModel().selectedRows(index.column()):
             model.setData(item_index, value, QtCore.Qt.EditRole)
 
-    def updateEditorGeometry(self, editor, option, index):
-        editor.setGeometry(option.rect)
 
 
-class ColorDelegate(QtWidgets.QStyledItemDelegate):
+class ColorDelegate(Delegate):
     def displayText(self, value, locale):
         return ''
 
     def createEditor(self, parent, option, index):
         value = index.model().data(index, QtCore.Qt.EditRole)
-        self.dialog = QtWidgets.QColorDialog(value, parent)
 
-        editor = QtWidgets.QWidget()
+        editor = QtWidgets.QWidget(parent)
+        editor.setWindowTitle('asdfasdfasdf')
 
-        self.dialog.colorSelected.connect(lambda: self.colorSelected(editor))
-        # dialog.colorSelected.connect(lambda: editor.color = dialog.selectedColor())
-        # dialog.colorSelected.connect(lambda: self.commitData.emit(editor))
-        # dialog.colorSelected.connect(lambda: self.closeEditor.emit(editor, self.NoHint))
+        color = QtWidgets.QColorDialog.getColor(value, parent)
+        editor.color = color
 
-        # dialog.open()
-
-        # color = QtWidgets.QColorDialog.getColor(value, parent)
-        # editor.color = color
-        # editor.setVisible(False)
-        self.closeEditor.connect(lambda: logging.debug('closeEditor'))
-        self.commitData.connect(lambda: logging.debug('commitData'))
-        # self.setModelData(editor, index.model(), index)
-
-        # logging.debug('createEditor')
-        # self.closeEditor.emit(editor, self.NoHint)
-        # self.commitData.emit(editor)
-
-        # self.closeEditor.connect(lambda: self.commitData.emit(editor))
-
-        # self.setModelData(editor, index.model(), index)
-        return editor
-
-
-    def colorSelected(self, editor):
-        logging.debug('colorSelected')
-        # editor.color = self.dialog.selectedColor()
+        # signals don't work so call to setModelData directly
         self.commitData.emit(editor)
         self.closeEditor.emit(editor, self.NoHint)
+        self.setModelData(editor, index.model(), index)
+
+        return editor
 
     def setModelData(self, editor, model, index):
-        value = self.dialog.selectedColor()
-
-        if index.row() == 4:
-            logging.debug(('setModelData', value))
-
+        value = editor.color
         if not value.isValid():
             return
 
+        for item_index in self.parent().selectionModel().selectedRows(index.column()):
+            model.setData(item_index, value, QtCore.Qt.EditRole)
+        editor.deleteLater()
+
+    def paint(self, painter, option, index):
+        value = index.model().data(index, QtCore.Qt.EditRole)
+        option.rect.adjust(5, 5, -5, -5)
+        painter.setBrush(value)
+        painter.drawRect(option.rect)
+
+class ColorDelegate(Delegate):
+    def displayText(self, value, locale):
+        return ''
+
+    def createEditor(self, parent, option, index):
+        value = index.model().data(index, QtCore.Qt.EditRole)
+
+        editor = QtWidgets.QWidget(parent)
+        editor.dialog = QtWidgets.QColorDialog(value, editor)
+        editor.dialog.colorSelected.connect(lambda color: setattr(editor, 'color', color))
+        editor.dialog.colorSelected.connect(lambda: self.commitData.emit(editor))
+        editor.dialog.colorSelected.connect(lambda: self.closeEditor.emit(editor, self.NoHint))
+
+        return editor
+
+    def setEditorData(self, editor, index):
+        value = index.model().data(index, QtCore.Qt.EditRole)
+        editor.dialog.setCurrentColor(value)
+        editor.dialog.open()
+
+    def setModelData(self, editor, model, index):
+        value = editor.color
+        if not value.isValid():
+            return
 
         for item_index in self.parent().selectionModel().selectedRows(index.column()):
             model.setData(item_index, value, QtCore.Qt.EditRole)
 
-    def setEditorData(self, editor, index):
-        logging.debug('setEditorData')
-        value = index.model().data(index, QtCore.Qt.EditRole)
-        self.dialog.setCurrentColor(value)
-        self.dialog.open()
-
-    def updateEditorGeometry(self, editor, option, index):
-        editor.setGeometry(option.rect)
-
     def paint(self, painter, option, index):
         value = index.model().data(index, QtCore.Qt.EditRole)
-
-        if index.row() == 4:
-            logging.debug(('paint', value))
-
         option.rect.adjust(5, 5, -5, -5)
         painter.setBrush(value)
         painter.drawRect(option.rect)
+

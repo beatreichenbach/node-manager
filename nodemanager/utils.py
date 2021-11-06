@@ -99,6 +99,30 @@ class Enum(object):
     def __repr__(self):
         return 'Enum({})'.format(repr({'current': self.current, 'enums': self._enums}))
 
+    def __str__(self):
+        return self.enums[self.current]
+
+    def __int__(self):
+        return int(self.current)
+
+    def __lt__(self, other):
+        return self.current < other.current
+
+    def __le__(self, other):
+        return self.current <= other.current
+
+    def __gt__(self, other):
+        return self.current > other.current
+
+    def __ge__(self, other):
+        return self.current >= other.current
+
+    def __eq__(self, other):
+        return self._enums == other._enums and self.current == other.current
+
+    def __ne__(self, other):
+        return self._enums != other._enums or self.current != other.current
+
     @property
     def enums(self):
         return self._enums
@@ -125,7 +149,8 @@ class Enum(object):
         elif value in self._enums.values():
             self._current = list(self._enums.values()).index(value)
 
-class FileSize(object):
+
+class FileSize(int):
     factors = {
         'KB': 1<<10,
         'MB': 1<<20,
@@ -145,6 +170,27 @@ class FileSize(object):
         text = '{:,.0f} {}'.format(self.size / (self.factors[self.unit]), self.unit)
         return text
 
+    def __int__(self):
+        return int(self.size)
+
+    def __lt__(self, other):
+        return self.size < other.size
+
+    def __le__(self, other):
+        return self.size <= other.size
+
+    def __gt__(self, other):
+        return self.size > other.size
+
+    def __ge__(self, other):
+        return self.size >= other.size
+
+    def __eq__(self, other):
+        return self.size == other.size
+
+    def __ne__(self, other):
+        return self.size != other.size
+
     @classmethod
     def from_file(cls, filepath):
         if os.path.isfile(filepath):
@@ -155,3 +201,8 @@ class FileSize(object):
 
 if __name__ == '__main__':
     print(FileSize())
+
+
+def title(text):
+    text = re.sub(r'(\w)([A-Z])', r'\1 \2', text).replace('_', ' ').title()
+    return text

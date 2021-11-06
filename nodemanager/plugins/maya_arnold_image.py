@@ -74,12 +74,14 @@ class Manager(maya.Manager):
             'filename',
             'directory',
             'autoTx',
-            'multiply'
+            'multiply',
+            'channels'
         ]
 
         return attrs
 
     def setActions(self):
+        logging.debug('imageactions')
         self.addAction('File', 'Set Directory', None)
         self.addAction('File', 'Find and Replace', None)
         self.addAction('File', 'Relocate', None)
@@ -99,6 +101,13 @@ class Manager(maya.Manager):
         self.addAction('Node', 'Show', None)
         self.addAction('Node', 'Select Dependent Objects', None)
 
+    def setFilters(self):
+        self.addFilter('name')
+        self.addFilter('status')
+        self.addFilter('colorSpace')
+        self.addFilter('filter')
+        self.addFilter('directory')
+
     def node_items(self):
         node_items = []
         for node in cmds.ls(type='aiImage'):
@@ -107,7 +116,6 @@ class Manager(maya.Manager):
 
     def node_item(self, node):
         return Node(node)
-
 
     def open_directory(self):
         os.startfile(self.selected_nodes()[-1].directory)
@@ -123,8 +131,15 @@ class Node(object):
 
         self.read_only_attrs.extend([
             # 'status',
-            'file_size'
+            'file_size',
+            'channels'
             ])
+
+    def __repr__(self):
+        return 'Node({})'.format(self.name)
+
+    def __str__(self):
+        return self.name
 
     def __getattr__(self, name):
         return self.get_node_attr(name)
@@ -197,8 +212,7 @@ class Node(object):
 
     @filename.setter
     def filename(self, value):
-        dirpath = os.path.abspath(self.filepath)
-        path = os.path.join(dirpath, value)
+        path = os.path.join(self.directory, value)
         self.filepath = path
 
     @property
@@ -227,4 +241,30 @@ class Node(object):
 
         return self._file_size
 
+    @property
+    def channels(self):
+        connections = []
+        out_connections = cmds.listConnections(
+                    self.node, destination=True, source=False, connections=True, plugs=True)
 
+        for i in range(0, len(out_connections), 2):
+            source = out_connections[i]
+            destination = out_connections[i + 1]
+
+            destination_node = destination.split('.')[0]
+            if not cmds.objExists(destination_node):
+                continue
+            cls = cmds.nodeType(destination_node)
+            ignore_classes = [
+                'shadingEngine',
+                'defaultShaderList',
+                'materialInfo',
+                'nodeGraphEditorInfo']
+            if cls in ignore_classes:
+                continue
+
+            valid_attr = source.split('.')[-1] not in ('message', 'partition')
+            if valid_attr:
+                connections.append(destination.split('.')[-1])
+
+        return ', '.join(set(connections))

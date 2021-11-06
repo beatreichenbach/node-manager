@@ -27,6 +27,7 @@ class ManagerDialog(QtWidgets.QDialog):
         super(ManagerDialog, self).__init__(parent)
 
         self.setObjectName('ManagerDialog')
+        self.setWindowTitle('Node Manager')
         self.dcc = dcc
         self.settings = utils.Settings()
 
