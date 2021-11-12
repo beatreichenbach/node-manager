@@ -21,11 +21,8 @@ def run():
 
 
 class Manager(manager.Manager):
-    display_name = ''
-    plugin_name = ''
+    plugin_name = 'mtoa.mll'
     settings_group = 'maya'
-    settings_defaults = {
-        }
 
     def __init__(self, *args):
         super(Manager, self).__init__(*args)
@@ -96,16 +93,14 @@ class Installer(setup.Installer):
         return True
 
 
-class Node(object):
-    node = ''
-    read_only_attrs = []
+class Node(manager.Node):
     _file_size = None
 
     def __init__(self, node):
         self.node = node
 
-        self.read_only_attrs.extend([
-            # 'status',
+        self.locked_attributes.extend([
+            'status',
             'file_size',
             'channels'
             ])
@@ -120,10 +115,35 @@ class Node(object):
         return self.get_node_attr(name)
 
     def __setattr__(self, name, value):
-        if name not in Node.__dict__:
+        if name not in dir(self):
             self.set_node_attr(name, value)
         else:
             object.__setattr__(self, name, value)
+
+    @property
+    def attributes(self):
+        '''
+        texture_node = cmds.shadingNode('aiImage', asTexture=True)
+        attrs = cmds.listAttr(texture_node, write=True, connectable=True)
+        attrs = [attr for attr in attrs if attr[-1] not in ['R', 'G', 'B', 'X', 'Y', 'Z']]
+        print(attrs)
+        cmds.delete(texture_node)
+        '''
+
+        attrs = [
+            'name',
+            'status',
+            'colorSpace',
+            'filter',
+            'file_size',
+            'filename',
+            'directory',
+            'autoTx',
+            'multiply',
+            'channels'
+        ]
+
+        return attrs
 
     def attr(self, name):
         return '{}.{}'.format(self.node, name)

@@ -116,7 +116,7 @@ class ActionWidget(QtWidgets.QWidget):
         super(ActionWidget, self).__init__(parent)
 
         self.setLayout(QtWidgets.QVBoxLayout())
-        self.groups = {}
+        self.group_boxes = {}
         self.parent = parent
 
     def clear(self):
@@ -125,24 +125,29 @@ class ActionWidget(QtWidgets.QWidget):
             if child.widget():
                 child.widget().deleteLater()
 
-        self.groups = {}
+        self.group_boxes = {}
 
     def update_actions(self):
         self.clear()
         logging.debug(self.parent.manager.display_name)
-        for action in self.parent.manager.actions.values():
-            group_grp = self.groups.get(action.group)
-            if not group_grp:
-                group_grp = QtWidgets.QGroupBox(action.group)
+
+        logging.debug(self.parent.manager.actions)
+        for group, actions in self.parent.manager.actions.items():
+            logging.debug([group, actions])
+            group_box = self.group_boxes.get(group)
+            if not group_box:
+                group_box = QtWidgets.QGroupBox(group)
                 group_lay = QtWidgets.QVBoxLayout()
-                group_grp.setLayout(group_lay)
-                self.layout().addWidget(group_grp)
-                self.groups[action.group] = group_grp
+                group_box.setLayout(group_lay)
+                self.layout().addWidget(group_box)
+                self.group_boxes[group] = group_box
 
-            button = QtWidgets.QPushButton(action.text)
+            for action in actions:
+                button = QtWidgets.QPushButton(action.text())
+                button.clicked.connect(action.trigger)
 
-            button.clicked.connect(action.func)
-            group_grp.layout().addWidget(button)
+                # button.clicked.connect(action.func)
+                group_box.layout().addWidget(button)
 
         self.layout().addStretch(1)
 

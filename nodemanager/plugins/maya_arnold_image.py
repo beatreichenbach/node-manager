@@ -14,76 +14,11 @@ from .. import manager
 
 class Manager(maya.Manager):
     display_name = 'Image'
-    plugin_name = 'mtoa.mll'
 
     def __init__(self, *args):
         super(Manager, self).__init__(*args)
 
-    @property
-    def attributes(self):
-        '''
-        texture_node = cmds.shadingNode('aiImage', asTexture=True)
-        attrs = cmds.listAttr(texture_node, write=True, connectable=True)
-        attrs = [attr for attr in attrs if attr[-1] not in ['R', 'G', 'B', 'X', 'Y', 'Z']]
-        print(attrs)
-        cmds.delete(texture_node)
-        '''
-
-        attrs = [
-            # 'filename',
-            'colorSpace',
-            'filter',
-            # 'mipmapBias',
-            # 'singleChannel',
-            # 'startChannel',
-            # 'swrap',
-            # 'twrap',
-            # 'sscale',
-            # 'tscale',
-            # 'sflip',
-            # 'tflip',
-            # 'soffset',
-            # 'toffset',
-            # 'swapSt',
-            # 'uvcoords',
-            # 'uvset',
-            'multiply',
-            # 'offset',
-            'ignoreMissingTextures',
-            # 'missingTextureColorA',
-            # 'missingTextureColor',
-            # 'aiUserOptions',
-            'autoTx',
-            # 'colorManagementConfigFileEnabled',
-            # 'colorManagementConfigFilePath',
-            # 'colorManagementEnabled',
-            # 'colorProfile',
-            'colorSpace',
-            # 'workingSpace',
-            # 'useFrameExtension',
-            # 'frame',
-            # 'ignoreColorSpaceFileRules'
-            ]
-
-        # set custom attributes:
-        attrs = [
-            'name',
-            'status',
-            'colorSpace',
-            'filter',
-            'file_size',
-            'filename',
-            'directory',
-            'autoTx',
-            'multiply',
-            'channels'
-        ]
-
-        attrs = [manager.Attribute(attr, str) for attr in attrs]
-        return attrs
-
     def setActions(self):
-        logging.debug('imageactions')
         self.addAction('File', 'Set Directory', None)
         self.addAction('File', 'Find and Replace', None)
         self.addAction('File', 'Relocate', None)
@@ -120,4 +55,5 @@ class Manager(maya.Manager):
         return maya.Node(node)
 
     def open_directory(self):
-        os.startfile(self.selected_nodes()[-1].directory)
+        if self.selected_nodes():
+            os.startfile(self.selected_nodes()[-1].directory)

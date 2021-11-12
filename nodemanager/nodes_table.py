@@ -133,6 +133,8 @@ class SortModel(QtCore.QSortFilterProxyModel):
         node = self.sourceModel().data(index, QtCore.Qt.UserRole)
 
         item = self.sourceModel().item(source_row, 0)
+        if not item:
+            return
         node = item.data()
 
         for attribute, value in self.filters.items():

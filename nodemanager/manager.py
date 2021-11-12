@@ -56,9 +56,12 @@ class Manager(object):
         pass
 
     def addAction(self, group, text, func):
-        action = Action(text, func, group)
-
-        self.actions[action.hash()] = action
+        # action = Action(text, func, group)
+        action = QtWidgets.QAction(text)
+        action.triggered.connect(func)
+        actions = self.actions.get(group, set())
+        actions.add(action)
+        self.actions[group] = actions
 
     def addFilter(self, attribute):
         if attribute not in self.filters:
@@ -99,7 +102,7 @@ class Manager(object):
                 if value is None:
                     text = ''
 
-                if str(attribute) in node_item.read_only_attrs:
+                if str(attribute) in node_item.locked_attributes:
                     item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
 
                 item.setData(text, QtCore.Qt.DisplayRole)
@@ -135,9 +138,11 @@ class Action(object):
 
 
 class Node(object):
+    node = None
+    locked_attributes = []
+
     def __init__(self, node):
         self.node = node
-        self.read_only_attrs = []
 
     def __repr__(self):
         return 'Node({})'.format(self.name)

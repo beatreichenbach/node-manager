@@ -10,6 +10,7 @@ try:
 except ImportError:
     import plugins
 
+
 def dcc_plugins():
     _plugins = all_plugins()
     dcc_plugins = {key: value for key, value in _plugins.items() if '_' not in key}
@@ -23,6 +24,7 @@ def all_plugins():
 
     return _plugins
 
+
 def contexts(dcc):
     _plugins = all_plugins()
     pattern = re.compile('{}_([^_]+)_'.format(re.escape(dcc)))
@@ -32,6 +34,7 @@ def contexts(dcc):
         if match:
             contexts.append(match.group(1))
     return list(set(contexts))
+
 
 def node_plugins(dcc, context):
     _plugins = all_plugins()
@@ -43,10 +46,10 @@ def node_plugins(dcc, context):
             node_plugins[name] = value
     return node_plugins
 
+
 def node_plugin(dcc, context, node):
     name = '{}_{}_{}'.format(dcc, context, node)
     return all_plugins().get(name)
-
 
 
 def iter_namespace(ns_pkg):
