@@ -1,12 +1,16 @@
 from __future__ import absolute_import
 import sys
-from PySide2 import QtWidgets
-from nodemanager import manager_dialog
-from maya import mel, cmds
-from .. import manager
-from .. import setup
 import logging
 import os
+
+from PySide2 import QtWidgets, QtGui
+from maya import mel, cmds
+
+from nodemanager import manager_dialog
+from .. import manager
+from .. import setup
+from .. import utils
+
 
 def run():
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(sys.argv)
@@ -14,6 +18,7 @@ def run():
     dialog = manager_dialog.ManagerDialog(main_window, dcc='maya')
     dialog.show()
     return main_window
+
 
 class Manager(manager.Manager):
     display_name = ''
@@ -89,3 +94,151 @@ class Installer(setup.Installer):
 
         logging.info('Installation successfull.')
         return True
+
+
+class Node(object):
+    node = ''
+    read_only_attrs = []
+    _file_size = None
+
+    def __init__(self, node):
+        self.node = node
+
+        self.read_only_attrs.extend([
+            # 'status',
+            'file_size',
+            'channels'
+            ])
+
+    def __repr__(self):
+        return 'Node({})'.format(self.name)
+
+    def __str__(self):
+        return self.name
+
+    def __getattr__(self, name):
+        return self.get_node_attr(name)
+
+    def __setattr__(self, name, value):
+        if name not in Node.__dict__:
+            self.set_node_attr(name, value)
+        else:
+            object.__setattr__(self, name, value)
+
+    def attr(self, name):
+        return '{}.{}'.format(self.node, name)
+
+    def has_node_attr(self, name):
+        return cmds.attributeQuery(name, node=self.node, exists=True)
+
+    def get_node_attr(self, name):
+        attr = self.attr(name)
+        try:
+            attr_type = cmds.getAttr(attr, type=True)
+            value = cmds.getAttr(attr)
+
+            if attr_type == 'float3':
+                value = QtGui.QColor.fromRgbF(*value[0])
+            elif attr_type == 'double3':
+                value = list(*value[0])
+            elif attr_type == 'enum':
+                enums = cmds.attributeQuery(name, node=self.node, listEnum=True)
+                value = utils.Enum(enums[0].split(':'), value)
+            return value
+        except ValueError:
+            raise AttributeError('No attribute matches name: {}'.format(attr))
+
+    def set_node_attr(self, name, value):
+        attr = self.attr(name)
+        try:
+            if isinstance(value, str):
+                value = value.replace('\\', '/')
+                cmds.setAttr(attr, value, type='string')
+            elif isinstance(value, utils.Enum):
+                cmds.setAttr(attr, value.current)
+            elif isinstance(value, QtGui.QColor):
+                cmds.setAttr(attr, *value.getRgbF(), type='double3')
+            else:
+                cmds.setAttr(attr, value)
+
+        except ValueError:
+            raise AttributeError('No attribute matches name: {}'.format(attr))
+
+    @property
+    def name(self):
+        return self.node.rsplit('|')[-1]
+
+    @name.setter
+    def name(self, value):
+        self.node = cmds.rename(self.node, value)
+
+    @property
+    def filepath(self):
+        return self.get_node_attr('filename')
+
+    @filepath.setter
+    def filepath(self, value):
+        self._file_size = None
+        self.set_node_attr('filename', value)
+
+    @property
+    def filename(self):
+        return os.path.basename(self.filepath)
+
+    @filename.setter
+    def filename(self, value):
+        path = os.path.join(self.directory, value)
+        self.filepath = path
+
+    @property
+    def directory(self):
+        return os.path.dirname(self.filepath)
+
+    @directory.setter
+    def directory(self, value):
+        dirpath = os.path.abspath(value)
+        path = os.path.join(dirpath, self.filename)
+        self.filepath = path
+
+    @property
+    def status(self):
+        return 1.01
+
+    @status.setter
+    def status(self, value):
+        pass
+
+    @property
+    def file_size(self):
+        if self._file_size is None:
+            self._file_size = utils.FileSize.from_file(self.filepath)
+
+        return self._file_size
+
+    @property
+    def channels(self):
+        connections = []
+        out_connections = cmds.listConnections(
+                    self.node, destination=True, source=False, connections=True, plugs=True)
+
+        for i in range(0, len(out_connections), 2):
+            source = out_connections[i]
+            destination = out_connections[i + 1]
+
+            destination_node = destination.split('.')[0]
+            if not cmds.objExists(destination_node):
+                continue
+            cls = cmds.nodeType(destination_node)
+            ignore_classes = [
+                'shadingEngine',
+                'defaultShaderList',
+                'materialInfo',
+                'nodeGraphEditorInfo']
+            if cls in ignore_classes:
+                continue
+
+            valid_attr = source.split('.')[-1] not in ('message', 'partition')
+            if valid_attr:
+                connections.append(destination.split('.')[-1])
+
+        return ', '.join(set(connections))

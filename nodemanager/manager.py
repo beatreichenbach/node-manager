@@ -10,28 +10,11 @@ from PySide2 import QtWidgets, QtCore, QtGui
 try:
     from . import plugin_utils
     from . import utils
+    from . import nodes_table
 except ImportError:
     import plugin_utils
     import utils
-
-class NodesModel(QtGui.QStandardItemModel):
-    def __init__(self, manager):
-        super(NodesModel, self).__init__()
-
-        self.manager = manager
-
-    def setData(self, index, value, role):
-
-        super(NodesModel, self).setData(index, value, role)
-
-        if role == QtCore.Qt.EditRole:
-            node = self.itemFromIndex(index).data()
-            attribute = self.manager.attributes[index.column()]
-            setattr(node, attribute, value)
-
-        return True
-
-
+    import nodes_table
 
 
 class Manager(object):
@@ -55,7 +38,7 @@ class Manager(object):
         self.setActions()
         self.setFilters()
 
-        self.model = NodesModel(self)
+        self.model = nodes_table.NodesModel()
 
     def init_settings(self):
         self.settings.beginGroup(self.settings_group)
@@ -83,9 +66,18 @@ class Manager(object):
 
     def load(self):
         self.model.clear()
-        # make this into function
-        labels = [attribute.replace('_', ' ').title() for attribute in self.attributes]
-        self.model.setHorizontalHeaderLabels(labels)
+
+        for i, attribute in enumerate(self.attributes):
+            item = QtGui.QStandardItem()
+            item.setText(attribute.display_name)
+            item.setData(attribute)
+            self.model.setHorizontalHeaderItem(i, item)
+
+            # self.model.setHeaderData(i, QtCore.Qt.Horizontal, attribute.display_name, QtCore.Qt.DisplayRole)
+            # self.model.setHeaderData(i, QtCore.Qt.Horizontal, attribute, QtCore.Qt.UserRole)
+
+        # this probably shouldn't be in here
+        self.parent.nodes_view.set_delegates()
 
         try:
             self.load_plugin()
@@ -97,30 +89,17 @@ class Manager(object):
                 QtWidgets.QMessageBox.Ok)
             return
 
-
         for node_item in self.node_items():
             items = []
             for attribute in self.attributes:
                 item = QtGui.QStandardItem()
-                value = getattr(node_item, attribute)
+                value = getattr(node_item, str(attribute))
 
                 text = value
                 if value is None:
                     text = ''
-                # else:
-                #     text = str(value)
 
-                # if isinstance(value, QtGui.QColor):
-                #     text = '({}, {}, {})'.format(value.redF(), value.greenF(), value.blueF())
-                # if isinstance(value, bool):
-                    # text = ''
-
-                    # item.setFlags(QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable)
-                    # item.setCheckState(QtCore.Qt.Checked if value else QtCore.Qt.Unchecked)
-                # elif isinstance(value, utils.Enum):
-                #     text = value.enums.get(value.current)
-
-                if attribute in node_item.read_only_attrs:
+                if str(attribute) in node_item.read_only_attrs:
                     item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
 
                 item.setData(text, QtCore.Qt.DisplayRole)
@@ -154,8 +133,36 @@ class Action(object):
     def hash(self):
         return hash((self.text, self.group))
 
+
 class Node(object):
-    def __init__(self):
-        pass
+    def __init__(self, node):
+        self.node = node
+        self.read_only_attrs = []
+
+    def __repr__(self):
+        return 'Node({})'.format(self.name)
+
+    def __str__(self):
+        return self.name
 
 
+class Attribute(object):
+    def __init__(self, name, type_):
+        self.name = name
+        self.type = type_
+
+    def __repr__(self):
+        type_ = self.type.__name__ if hasattr(self.type, '__name__') else self.type
+        return 'Attribute({}, {})'.format(self.name, type_)
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def display_name(self):
+        return self.name.replace('_', ' ').title()
+
+
+if __name__ == '__main__':
+    attr = Attribute('count', None)
+    print(repr(attr))
