@@ -45,14 +45,13 @@ class Manager(maya.Manager):
         self.addFilter('filter')
         self.addFilter('directory')
 
-    def node_items(self):
-        node_items = []
-        for node in cmds.ls(type='aiImage'):
-            node_items.append(self.node_item(node))
-        return node_items
-
-    def node_item(self, node):
-        return maya.Node(node)
+    def nodes(self, options={}):
+        nodes = []
+        maya_nodes = cmds.ls(type='aiImage')
+        for maya_node in maya_nodes:
+            node = maya.Node(maya_node)
+            nodes.append(node)
+        return nodes
 
     def open_directory(self):
         if self.selected_nodes():

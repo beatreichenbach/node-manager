@@ -2,6 +2,7 @@ from __future__ import absolute_import
 import sys
 import logging
 import os
+from enum import Enum
 
 from PySide2 import QtWidgets, QtGui
 from maya import mel, cmds
@@ -140,7 +141,8 @@ class Node(manager.Node):
             'directory',
             'autoTx',
             'multiply',
-            'channels'
+            'channels',
+            'frame'
         ]
 
         return attrs
@@ -162,10 +164,14 @@ class Node(manager.Node):
             elif attr_type == 'double3':
                 value = list(*value[0])
             elif attr_type == 'enum':
-                enums = cmds.attributeQuery(name, node=self.node, listEnum=True)
-                value = utils.Enum(enums[0].split(':'), value)
+                enum_strings = cmds.attributeQuery(name, node=self.node, listEnum=True)
+                names = enum_strings[0].split(':')
+                class_ = Enum(name.title(), names, start=0)
+                value = class_(value)
+                # value = utils.Enum(enums[0].split(':'), value)
             return value
-        except ValueError:
+        except ValueError as e:
+            raise e
             raise AttributeError('No attribute matches name: {}'.format(attr))
 
     def set_node_attr(self, name, value):
@@ -174,8 +180,8 @@ class Node(manager.Node):
             if isinstance(value, str):
                 value = value.replace('\\', '/')
                 cmds.setAttr(attr, value, type='string')
-            elif isinstance(value, utils.Enum):
-                cmds.setAttr(attr, value.current)
+            elif isinstance(value, Enum):
+                cmds.setAttr(attr, value.value)
             elif isinstance(value, QtGui.QColor):
                 cmds.setAttr(attr, *value.getRgbF(), type='double3')
             else:
@@ -262,3 +268,11 @@ class Node(manager.Node):
                 connections.append(destination.split('.')[-1])
 
         return ', '.join(set(connections))
+
+    @property
+    def frame(self):
+        return 90
+
+    @frame.setter
+    def frame(self, value):
+        pass

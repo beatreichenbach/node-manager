@@ -3,6 +3,7 @@ import re
 import glob
 import logging
 import shutil
+from enum import Enum
 
 from PySide2 import QtWidgets, QtCore, QtGui
 
@@ -39,8 +40,9 @@ class ManagerWidget(QtWidgets.QWidget):
         sort_model.setSortCaseSensitivity(QtCore.Qt.CaseInsensitive)
         sort_model.setSourceModel(self.manager.model)
 
-        # self.nodes_view.setModel(self.manager.model)
         self.nodes_view.setModel(sort_model)
+        self.manager.model.updated.connect(self.nodes_view.update)
+        self.manager.model.updated.connect(self.display_widget.update)
 
         self.display_widget.filter_changed.connect(sort_model.update_filters)
 
@@ -57,13 +59,13 @@ class ManagerWidget(QtWidgets.QWidget):
         self.splitter.addWidget(self.list_scroll)
         self.layout().addWidget(self.splitter)
 
-        self.display_widget = DisplayWidget(self)
-        self.display_lay.layout().addWidget(self.display_widget)
-
         self.nodes_view = nodes_table.NodesView(self)
         self.list_lay.addWidget(self.nodes_view)
-        self.action_widget = ActionWidget(self)
+        self.action_widget = ActionWidget(self.manager)
         self.list_lay.addWidget(self.action_widget)
+
+        self.display_widget = DisplayWidget(self.nodes_view)
+        self.display_lay.layout().insertWidget(0, self.display_widget)
 
         self.setStyleSheet('QTableView::item {border: 0px; padding: 0px 10px;}')
 
@@ -97,27 +99,12 @@ class ManagerWidget(QtWidgets.QWidget):
 
         self.load_settings()
 
-        # pure vomit
-        item = self.manager.model.item(0, 0)
-        if item:
-            node = item.data()
-            filters = {}
-            for i, attribute in enumerate(self.manager.attributes):
-                filters[attribute] = getattr(node, str(attribute))
-
-            self.display_widget.update_filters(filters)
-
-        # fix this!!!
-        self.nodes_view.update_header_actions()
-
 
 class ActionWidget(QtWidgets.QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, manager, parent=None):
         super(ActionWidget, self).__init__(parent)
-
+        self.manager = manager
         self.setLayout(QtWidgets.QVBoxLayout())
-        self.group_boxes = {}
-        self.parent = parent
 
     def clear(self):
         while self.layout().count():
@@ -129,11 +116,7 @@ class ActionWidget(QtWidgets.QWidget):
 
     def update_actions(self):
         self.clear()
-        logging.debug(self.parent.manager.display_name)
-
-        logging.debug(self.parent.manager.actions)
-        for group, actions in self.parent.manager.actions.items():
-            logging.debug([group, actions])
+        for group, actions in self.manager.actions.items():
             group_box = self.group_boxes.get(group)
             if not group_box:
                 group_box = QtWidgets.QGroupBox(group)
@@ -145,8 +128,6 @@ class ActionWidget(QtWidgets.QWidget):
             for action in actions:
                 button = QtWidgets.QPushButton(action.text())
                 button.clicked.connect(action.trigger)
-
-                # button.clicked.connect(action.func)
                 group_box.layout().addWidget(button)
 
         self.layout().addStretch(1)
@@ -155,13 +136,9 @@ class ActionWidget(QtWidgets.QWidget):
 class DisplayWidget(QtWidgets.QWidget):
     filter_changed = QtCore.Signal(dict)
 
-    def __init__(self, parent):
+    def __init__(self, table_view, parent=None):
         super(DisplayWidget, self).__init__(parent)
-
-        self.parent = parent
-        self.manager = parent.manager
-        self.filter_widgets = {}
-
+        self.table_view = table_view
         self.init_ui()
 
     def init_ui(self):
@@ -181,46 +158,59 @@ class DisplayWidget(QtWidgets.QWidget):
             if child.widget():
                 child.widget().deleteLater()
 
-    def update_filters(self, filters):
+    def update(self):
+        self.update_filters()
+
+    def update_filters(self):
         self.clear()
 
-        # as with the delegates this should probably not depend on the value but some sort of
-        # attribute object that can hold enum.
-        for attribute, value in filters.items():
+        model = self.table_view._model
+        node = model.data(model.index(0, 0), QtCore.Qt.UserRole + 1)
+        if not node:
+            return
+
+        for attribute in node.attributes:
+            value = getattr(node, str(attribute))
+
             widget = None
             if isinstance(value, str):
                 widget = QtWidgets.QLineEdit(self)
-                widget.textChanged.connect(self.filter_input_changed)
+                signal = widget.textChanged
+
             elif isinstance(value, bool):
                 widget = QtWidgets.QComboBox(self)
-                widget.addItems(('', 'Disabled', 'Enabled'))
-                widget.currentTextChanged.connect(self.filter_input_changed)
+                items = {'Disabled': False, 'Enabled': True}
+                for text, value in items.items():
+                    widget.addItem(text, value)
+                widget.insertItem(0, '')
+                widget.setCurrentIndex(0)
                 widget.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-            elif isinstance(value, utils.Enum):
+                signal = widget.currentTextChanged
+
+            elif isinstance(value, Enum):
                 widget = QtWidgets.QComboBox(self)
-                widget.addItem('')
-                for i, enum in value.enums.items():
-                    widget.addItem(enum, i)
-                widget.currentTextChanged.connect(self.filter_input_changed)
+                for member in value.__class__:
+                    widget.addItem(member.name, member)
+                widget.insertItem(0, '')
+                widget.setCurrentIndex(0)
                 widget.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+                signal = widget.currentTextChanged
 
             if widget:
+                signal.connect(self.filter_input_changed)
                 self.filter_widgets[attribute] = widget
-                # make title into func
-                self.filter_lay.addRow(attribute.display_name, widget)
+                self.filter_lay.addRow(utils.title(attribute), widget)
 
     def filter_input_changed(self):
-        # i hate that name
         filters = {}
 
         for attribute, widget in self.filter_widgets.items():
             value = None
             if isinstance(widget, QtWidgets.QLineEdit):
                 value = widget.text()
-            if isinstance(widget, QtWidgets.QComboBox):
-                # should be data?
+            elif isinstance(widget, QtWidgets.QComboBox):
                 value = widget.currentData()
-            if value is not None:
+            if value is not None and value != '':
                 filters[attribute] = value
 
         self.filter_changed.emit(filters)

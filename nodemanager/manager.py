@@ -68,19 +68,6 @@ class Manager(object):
             self.filters.append(attribute)
 
     def load(self):
-        self.model.clear()
-
-        for i, attribute in enumerate(self.attributes):
-            item = QtGui.QStandardItem()
-            item.setText(attribute.display_name)
-            item.setData(attribute)
-            self.model.setHorizontalHeaderItem(i, item)
-
-            # self.model.setHeaderData(i, QtCore.Qt.Horizontal, attribute.display_name, QtCore.Qt.DisplayRole)
-            # self.model.setHeaderData(i, QtCore.Qt.Horizontal, attribute, QtCore.Qt.UserRole)
-
-        # this probably shouldn't be in here
-        self.parent.nodes_view.set_delegates()
 
         try:
             self.load_plugin()
@@ -92,26 +79,10 @@ class Manager(object):
                 QtWidgets.QMessageBox.Ok)
             return
 
-        for node_item in self.node_items():
-            items = []
-            for attribute in self.attributes:
-                item = QtGui.QStandardItem()
-                value = getattr(node_item, str(attribute))
+        self.model.set_nodes(self.nodes())
 
-                text = value
-                if value is None:
-                    text = ''
-
-                if str(attribute) in node_item.locked_attributes:
-                    item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
-
-                item.setData(text, QtCore.Qt.DisplayRole)
-                item.setData(node_item)
-
-                if isinstance(value, utils.Enum):
-                    item.setData(value, role=QtCore.Qt.DisplayRole)
-                items.append(item)
-            self.model.appendRow(items)
+    def nodes(self):
+        return []
 
     def setActions(self):
         pass

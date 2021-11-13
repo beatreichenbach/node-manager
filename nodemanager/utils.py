@@ -89,73 +89,12 @@ class NotFoundException(Exception):
     message = 'Not found.'
 
 
-class Enum(object):
-    def __init__(self, enums=[], current=None):
-        self._enums = {}
-        self._current = None
-        self.enums = enums
-        self.current = current
-
-    def __repr__(self):
-        return 'Enum({})'.format(repr({'current': self.current, 'enums': self._enums}))
-
-    def __str__(self):
-        return self.enums[self.current]
-
-    def __int__(self):
-        return int(self.current)
-
-    def __lt__(self, other):
-        return self.current < other.current
-
-    def __le__(self, other):
-        return self.current <= other.current
-
-    def __gt__(self, other):
-        return self.current > other.current
-
-    def __ge__(self, other):
-        return self.current >= other.current
-
-    def __eq__(self, other):
-        return self._enums == other._enums and self.current == other.current
-
-    def __ne__(self, other):
-        return self._enums != other._enums or self.current != other.current
-
-    @property
-    def enums(self):
-        return self._enums
-
-    @enums.setter
-    def enums(self, value):
-        if isinstance(value, list):
-            self._enums = {i: enum for i, enum in enumerate(value)}
-        elif isinstance(value, dict):
-            self._enums = value
-        else:
-            raise TypeError('Expected list or dict, got {} instead.'.format(type(value)))
-
-    @property
-    def current(self):
-        return self._current
-
-    @current.setter
-    def current(self, value):
-        if value is None:
-            return
-        if isinstance(value, int):
-            self._current = value
-        elif value in self._enums.values():
-            self._current = list(self._enums.values()).index(value)
-
-
 class FileSize(int):
     factors = {
-        'KB': 1<<10,
-        'MB': 1<<20,
-        'GB': 1<<30,
-        'TB': 1<<40
+        'KB': 1 << 10,
+        'MB': 1 << 20,
+        'GB': 1 << 30,
+        'TB': 1 << 40
         }
 
     unit = 'KB'
@@ -199,10 +138,11 @@ class FileSize(int):
             size = 0
         return cls(size)
 
-if __name__ == '__main__':
-    print(FileSize())
-
 
 def title(text):
     text = re.sub(r'(\w)([A-Z])', r'\1 \2', text).replace('_', ' ').title()
     return text
+
+
+if __name__ == '__main__':
+    print(FileSize())
