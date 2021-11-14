@@ -39,6 +39,7 @@ class Manager(maya.Manager):
         self.addFilter('colorSpace')
         self.addFilter('filter')
         self.addFilter('directory')
+        self.addFilter('channels')
 
     def nodes(self, options={}):
         nodes = []
@@ -88,6 +89,11 @@ class Node(maya.Node):
             'channels',
         ]
 
+        # attrs = [
+        #     'name',
+        #     'channels',
+        #     ]
+
         return attrs
 
     @property
@@ -135,7 +141,6 @@ class Node(maya.Node):
 
     @property
     def channels(self):
-        logging.debug(self.name)
         channels = []
 
         shader_types = cmds.listNodeTypes('shader')

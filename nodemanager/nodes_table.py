@@ -109,6 +109,20 @@ class NodesView(QtWidgets.QTableView):
 class NodesModel(QtGui.QStandardItemModel):
     updated = QtCore.Signal()
 
+    def data(self, index, role=QtCore.Qt.DisplayRole):
+        # override to enable deferred loading of items
+        data = super(NodesModel, self).data(index, role)
+
+        # if role in (QtCore.Qt.DisplayRole, QtCore.Qt.EditRole) and index.column() == 0:
+        #     logging.debug(data)
+
+        if role in (QtCore.Qt.DisplayRole, QtCore.Qt.EditRole) and callable(data):
+            data = data()
+            # if index.column() == 0:
+            logging.debug((index, data, role))
+            super(NodesModel, self).setData(index, data, role)
+        return data
+
     def setData(self, index, value, role):
         super(NodesModel, self).setData(index, value, role)
 
@@ -127,7 +141,7 @@ class NodesModel(QtGui.QStandardItemModel):
             items = []
             for attribute in node.attributes:
                 item = QtGui.QStandardItem()
-                value = DefferedValue(node, attribute)
+                value = self.deferred_loading(node, attribute)
 
                 if attribute in node.locked_attributes:
                     item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
@@ -139,37 +153,30 @@ class NodesModel(QtGui.QStandardItemModel):
 
             self.appendRow(items)
 
+        self.set_headers(nodes)
+        self.updated.emit()
+
+    def set_headers(self, nodes):
         if nodes:
             node = nodes[0]
-            for i, attribute in enumerate(node.attributes):
+            self.attributes = node.attributes
+            for i, attribute in enumerate(self.attributes):
                 item = QtGui.QStandardItem()
                 item.setText(utils.title(attribute))
                 item.setData(attribute)
                 self.setHorizontalHeaderItem(i, item)
 
-        self.updated.emit()
-
-
-class DefferedValue(object):
-    def __init__(self, node, attr):
-        self.node = node
-        self.attr = attr
-        self._value = None
-
-    @property
-    def value(self):
-        if self._value is None:
-            self._value = getattr(self.node, self.attr)
-        return self._value
+    @staticmethod
+    def deferred_loading(node, attribute):
+        def wrapper():
+            return getattr(node, attribute)
+        return wrapper
 
 
 class SortModel(QtCore.QSortFilterProxyModel):
     filters = {}
 
     def value(self, value):
-        if isinstance(value, DefferedValue):
-            value = value.value
-
         if isinstance(value, str):
             if self.sortCaseSensitivity() == QtCore.Qt.CaseInsensitive:
                 return value.lower()
@@ -180,27 +187,42 @@ class SortModel(QtCore.QSortFilterProxyModel):
         return value
 
     def lessThan(self, left, right):
+        # load requested item / override data
         left_value = self.value(self.sourceModel().data(left))
         right_value = self.value(self.sourceModel().data(right))
         return left_value < right_value
 
     def filterAcceptsRow(self, source_row, source_parent):
-        index = self.sourceModel().index(source_row, 0, source_parent)
-        node = self.sourceModel().data(index, QtCore.Qt.UserRole + 1)
+        model = self.sourceModel()
+        # index = model.index(source_row, 0, source_parent)
+        # node = model.data(index, QtCore.Qt.UserRole + 1)
 
-        if not node:
-            return True
+        # headers = []
+        # for i in range(model.columnCount()):
+        #     headers.append(model.headerData(i, QtCore.Qt.Horizontal, QtCore.Qt.UserRole + 1))
+
+        # if not node:
+        #     return True
 
         for attribute, filter_value in self.filters.items():
-            # replace with item
-            node_value = self.value(getattr(node, attribute))
+            try:
+                column = model.attributes.index(attribute)
+            except IndexError:
+                continue
+            index = model.index(source_row, column, source_parent)
+
+            item_value = self.value(model.data(index))
+            logging.debug(item_value)
             filter_value = self.value(filter_value)
+
+            if isinstance(item_value, list):
+                item_value = ''.join(item_value)
 
             if isinstance(filter_value, str):
                 # todo: add support for expressions?
-                if filter_value not in node_value:
+                if filter_value not in item_value:
                     break
-            elif filter_value != node_value:
+            elif filter_value != item_value:
                 break
         else:
             return True
@@ -213,14 +235,6 @@ class SortModel(QtCore.QSortFilterProxyModel):
 
 
 class Delegate(QtWidgets.QStyledItemDelegate):
-    def value(self, value):
-        if isinstance(value, DefferedValue):
-            value = value.value
-        return value
-
-    def displayText(self, value, locale):
-        return super(Delegate, self).displayText(self.value(value), locale)
-
     def setModelData(self, editor, model, index, value=None):
         # Set ModelData on all selected rows
 
@@ -256,7 +270,7 @@ class Delegate(QtWidgets.QStyledItemDelegate):
 
 class FileSizeDelegate(Delegate):
     def displayText(self, value, locale):
-        return str(self.value(value))
+        return str(value)
 
     def initStyleOption(self, option, index):
         super(FileSizeDelegate, self).initStyleOption(option, index)
@@ -265,13 +279,12 @@ class FileSizeDelegate(Delegate):
 
 class ListDelegate(Delegate):
     def displayText(self, value, locale):
-        logging.debug('listcall')
-        return ', '.join(self.value(value))
+        return ', '.join(value)
 
 
 class BoolDelegate(Delegate):
     def displayText(self, value, locale):
-        return 'Enabled' if self.value(value) else 'Disabled'
+        return 'Enabled' if value else 'Disabled'
 
     def createEditor(self, parent, option, index):
         editor = QtWidgets.QComboBox(parent)
@@ -296,7 +309,7 @@ class EnumDelegate(Delegate):
         self.enum = enum
 
     def displayText(self, value, locale):
-        return self.value(value).name
+        return value.name
 
     def createEditor(self, parent, option, index):
         editor = QtWidgets.QComboBox(parent)
@@ -342,8 +355,6 @@ class ColorDelegate(Delegate):
 
     def paint(self, painter, option, index):
         value = index.model().data(index, QtCore.Qt.EditRole)
-        if isinstance(value, DefferedValue):
-            value = value.value
         option.rect.adjust(5, 5, -5, -5)
         painter.setBrush(value)
         painter.drawRect(option.rect)

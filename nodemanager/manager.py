@@ -52,7 +52,6 @@ class Manager(object):
         pass
 
     def addAction(self, group, text, func):
-        # action = Action(text, func, group)
         action = QtWidgets.QAction(text)
         action.triggered.connect(func)
         actions = self.actions.get(group, set())

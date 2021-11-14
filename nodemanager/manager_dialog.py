@@ -31,28 +31,21 @@ class ManagerDialog(QtWidgets.QDialog):
         self.dcc = dcc
         self.settings = utils.Settings()
 
-        self.context = None
         self.manager_widget = None
 
         self.init_ui()
-
-        # currentIndex does not seem to trigger changed
         self.connect_ui()
-        self.context_changed()
         self.load_settings()
-        self.tab_changed()
 
-
-        self.manager_widget.load()
+        # for testing purposes only
+        # self.manager_widget.load()
 
     def init_ui(self):
         gui_utils.load_ui(self, 'manager_dialog.ui')
 
         self.resize(800, 600)
 
-        self.update_context()
-
-        # Menu Bar
+        # menu bar
         menu_bar = QtWidgets.QMenuBar(self)
         menu = QtWidgets.QMenu('Settings')
         action = menu.addAction('Edit Settings')
@@ -71,6 +64,7 @@ class ManagerDialog(QtWidgets.QDialog):
         menu_bar.addMenu(menu)
         self.layout().setMenuBar(menu_bar)
 
+        # progress and status bar
         self.main_prgbar.setVisible(False)
         size_policy = self.main_prgbar.sizePolicy()
         # size_policy.setRetainSizeWhenHidden(True)
@@ -87,6 +81,9 @@ class ManagerDialog(QtWidgets.QDialog):
         self.footer_lay.insertWidget(0, self.status_bar)
         self.footer_lay.setStretch(0, 1)
         self.footer_lay.setStretch(1, 0)
+
+        # init tabs
+        self.update_context()
 
     def connect_ui(self):
         self.context_cmb.currentTextChanged.connect(self.context_changed)
@@ -107,20 +104,28 @@ class ManagerDialog(QtWidgets.QDialog):
         self.settings.setValue('manager_dialog/pos', self.pos())
         self.settings.setValue('manager_dialog/size', self.size())
 
+        self.settings.setValue('manager_dialog/context', self.context_cmb.currentText())
+
         tab = self.manager_tab.tabText(self.manager_tab.currentIndex())
         self.settings.setValue('manager_dialog/tab', tab)
 
     def load_settings(self):
         logging.debug('load_settings')
-        if self.settings.value('manager_dialog/pos'):
-            self.move(self.settings.value('manager_dialog/pos'))
-        if self.settings.value('manager_dialog/size'):
-            self.resize(self.settings.value('manager_dialog/size'))
+        value = self.settings.value('manager_dialog/pos')
+        if value:
+            self.move(value)
+        value = self.settings.value('manager_dialog/size')
+        if value:
+            self.resize(value)
 
-        if self.settings.value('manager_dialog/tab'):
-            tab = self.settings.value('manager_dialog/tab')
+        value = self.settings.value('manager_dialog/context')
+        if value:
+            self.context_cmb.setCurrentText(value)
+
+        value = self.settings.value('manager_dialog/tab')
+        if value:
             for i in range(self.manager_tab.count()):
-                if self.manager_tab.tabText(i) == tab:
+                if self.manager_tab.tabText(i) == value:
                     self.manager_tab.setCurrentIndex(i)
                     break
 
@@ -164,20 +169,28 @@ class ManagerDialog(QtWidgets.QDialog):
 
     def context_changed(self):
         logging.debug('context_changed')
-        self.context = self.context_cmb.currentData()
         self.update_tabs()
 
     def update_context(self):
         for context in sorted(plugin_utils.contexts(self.dcc)):
             self.context_cmb.addItem(context.title(), context)
+        self.context_cmb.setCurrentIndex(-1)
 
     def update_tabs(self):
-        self.manager_tab.clear()
         logging.debug('update_tabs')
-        for node in sorted(plugin_utils.node_plugins(self.dcc, self.context)):
-            widget = manager_widget.ManagerWidget(self, self.dcc, self.context, node)
+        self.manager_tab.clear()
+
+        self.manager_tab.blockSignals(True)
+
+        context = self.context_cmb.currentData()
+        if not context:
+            return
+        for node in sorted(plugin_utils.node_plugins(self.dcc, context)):
+            widget = manager_widget.ManagerWidget(self, self.dcc, context, node)
             self.manager_tab.addTab(widget, node.title())
         self.manager_widget = self.manager_tab.currentWidget()
+
+        self.manager_tab.blockSignals(False)
 
     def tab_changed(self):
         logging.debug('tab_changed')

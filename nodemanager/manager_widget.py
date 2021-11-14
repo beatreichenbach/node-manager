@@ -38,7 +38,6 @@ class ManagerWidget(QtWidgets.QWidget):
         self.action_widget.update_actions()
 
         self.connect_ui()
-
         self.load_settings()
 
     def init_ui(self):
@@ -74,28 +73,39 @@ class ManagerWidget(QtWidgets.QWidget):
         self.display_widget.filter_changed.connect(self.sort_model.update_filters)
 
     def closeEvent(self, event):
-        logging.debug('manager_widget closeEvent')
         self.save_settings()
         event.accept()
 
     def save_settings(self):
         self.settings.setValue('manager_widget/splitter', self.splitter.sizes())
 
-        value = self.nodes_view.horizontalHeader().saveState()
-        self.settings.setValue('plugins/{}_colums'.format(self.plugin), value)
+        header = self.nodes_view.horizontalHeader()
+        if header.count():
+            value = header.saveState()
+            self.settings.setValue('plugins/{}_columns'.format(self.plugin), value)
+
+        value = header.count()
+        if value:
+            self.settings.setValue('plugins/{}_columncount'.format(self.plugin), value)
 
     def load_settings(self):
         value = self.settings.list('manager_widget/splitter')
-        if value:
+        # setting splitter size when identical seems to cause it to reset
+        if value and self.splitter.sizes() != value:
             self.splitter.setSizes(value)
+        # logging.debug(['manager_widget', 'load_settings', self.plugin, value, self.splitter.sizes()])
 
-        value = self.settings.value('plugins/{}_colums'.format(self.plugin))
+        value = self.settings.value('plugins/{}_columns'.format(self.plugin))
         if value:
-            self.nodes_view.horizontalHeader().restoreState(value)
-            self.nodes_view.update_header_actions()
+            header = self.nodes_view.horizontalHeader()
+            column_count = self.settings.value('plugins/{}_columncount'.format(self.plugin))
+            if int(column_count) == header.count():
+                header.restoreState(value)
+                self.nodes_view.update_header_actions()
 
     def load(self):
         logging.debug('load')
+        # save settings to keep columns the same
         self.save_settings()
         self.manager.load()
         self.load_settings()
@@ -174,7 +184,7 @@ class DisplayWidget(QtWidgets.QWidget):
             value = getattr(node, str(attribute))
 
             widget = None
-            if isinstance(value, str):
+            if isinstance(value, str) or isinstance(value, list):
                 widget = QtWidgets.QLineEdit(self)
                 signal = widget.textChanged
 
