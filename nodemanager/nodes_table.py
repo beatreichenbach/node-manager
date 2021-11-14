@@ -53,6 +53,8 @@ class NodesView(QtWidgets.QTableView):
 
     def update_header_actions(self):
         header = self.horizontalHeader()
+        for action in header.actions():
+            header.removeAction(action)
 
         for i in range(self._model.columnCount()):
             item = self._model.horizontalHeaderItem(i)
@@ -125,7 +127,7 @@ class NodesModel(QtGui.QStandardItemModel):
             items = []
             for attribute in node.attributes:
                 item = QtGui.QStandardItem()
-                value = getattr(node, attribute)
+                value = DefferedValue(node, attribute)
 
                 if attribute in node.locked_attributes:
                     item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
@@ -148,10 +150,26 @@ class NodesModel(QtGui.QStandardItemModel):
         self.updated.emit()
 
 
+class DefferedValue(object):
+    def __init__(self, node, attr):
+        self.node = node
+        self.attr = attr
+        self._value = None
+
+    @property
+    def value(self):
+        if self._value is None:
+            self._value = getattr(self.node, self.attr)
+        return self._value
+
+
 class SortModel(QtCore.QSortFilterProxyModel):
     filters = {}
 
     def value(self, value):
+        if isinstance(value, DefferedValue):
+            value = value.value
+
         if isinstance(value, str):
             if self.sortCaseSensitivity() == QtCore.Qt.CaseInsensitive:
                 return value.lower()
@@ -174,6 +192,7 @@ class SortModel(QtCore.QSortFilterProxyModel):
             return True
 
         for attribute, filter_value in self.filters.items():
+            # replace with item
             node_value = self.value(getattr(node, attribute))
             filter_value = self.value(filter_value)
 
@@ -194,6 +213,14 @@ class SortModel(QtCore.QSortFilterProxyModel):
 
 
 class Delegate(QtWidgets.QStyledItemDelegate):
+    def value(self, value):
+        if isinstance(value, DefferedValue):
+            value = value.value
+        return value
+
+    def displayText(self, value, locale):
+        return super(Delegate, self).displayText(self.value(value), locale)
+
     def setModelData(self, editor, model, index, value=None):
         # Set ModelData on all selected rows
 
@@ -220,6 +247,8 @@ class Delegate(QtWidgets.QStyledItemDelegate):
             delegate = ColorDelegate(parent)
         elif isinstance(value, bool):
             delegate = BoolDelegate(parent)
+        elif isinstance(value, list):
+            delegate = ListDelegate(parent)
         else:
             delegate = cls(parent)
         return delegate
@@ -227,12 +256,22 @@ class Delegate(QtWidgets.QStyledItemDelegate):
 
 class FileSizeDelegate(Delegate):
     def displayText(self, value, locale):
-        return str(value)
+        return str(self.value(value))
+
+    def initStyleOption(self, option, index):
+        super(FileSizeDelegate, self).initStyleOption(option, index)
+        option.displayAlignment = QtCore.Qt.AlignRight
+
+
+class ListDelegate(Delegate):
+    def displayText(self, value, locale):
+        logging.debug('listcall')
+        return ', '.join(self.value(value))
 
 
 class BoolDelegate(Delegate):
     def displayText(self, value, locale):
-        return 'Enabled' if value else 'Disabled'
+        return 'Enabled' if self.value(value) else 'Disabled'
 
     def createEditor(self, parent, option, index):
         editor = QtWidgets.QComboBox(parent)
@@ -257,7 +296,7 @@ class EnumDelegate(Delegate):
         self.enum = enum
 
     def displayText(self, value, locale):
-        return value.name
+        return self.value(value).name
 
     def createEditor(self, parent, option, index):
         editor = QtWidgets.QComboBox(parent)
@@ -303,6 +342,8 @@ class ColorDelegate(Delegate):
 
     def paint(self, painter, option, index):
         value = index.model().data(index, QtCore.Qt.EditRole)
+        if isinstance(value, DefferedValue):
+            value = value.value
         option.rect.adjust(5, 5, -5, -5)
         painter.setBrush(value)
         painter.drawRect(option.rect)

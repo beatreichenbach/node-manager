@@ -31,22 +31,12 @@ class ManagerWidget(QtWidgets.QWidget):
 
         self.plugin = '_'.join((self.dcc, self.context, self.node))
         self.manager = manager.Manager.from_plugin(self.plugin)
-        # fix ugh
-        self.manager.parent = self
 
         self.init_ui()
 
-        sort_model = nodes_table.SortModel(self)
-        sort_model.setSortCaseSensitivity(QtCore.Qt.CaseInsensitive)
-        sort_model.setSourceModel(self.manager.model)
-
-        self.nodes_view.setModel(sort_model)
-        self.manager.model.updated.connect(self.nodes_view.update)
-        self.manager.model.updated.connect(self.display_widget.update)
-
-        self.display_widget.filter_changed.connect(sort_model.update_filters)
-
+        self.manager.table_view = self.nodes_view
         self.action_widget.update_actions()
+
         self.connect_ui()
 
         self.load_settings()
@@ -59,11 +49,19 @@ class ManagerWidget(QtWidgets.QWidget):
         self.splitter.addWidget(self.list_scroll)
         self.layout().addWidget(self.splitter)
 
+        # table view
         self.nodes_view = nodes_table.NodesView(self)
+        self.sort_model = nodes_table.SortModel(self)
+        self.sort_model.setSortCaseSensitivity(QtCore.Qt.CaseInsensitive)
+        self.sort_model.setSourceModel(self.manager.model)
+        self.nodes_view.setModel(self.sort_model)
         self.list_lay.addWidget(self.nodes_view)
+
+        # action widget
         self.action_widget = ActionWidget(self.manager)
         self.list_lay.addWidget(self.action_widget)
 
+        # display widget
         self.display_widget = DisplayWidget(self.nodes_view)
         self.display_lay.layout().insertWidget(0, self.display_widget)
 
@@ -71,6 +69,9 @@ class ManagerWidget(QtWidgets.QWidget):
 
     def connect_ui(self):
         self.load_btn.clicked.connect(self.load)
+        self.manager.model.updated.connect(self.nodes_view.update)
+        self.manager.model.updated.connect(self.display_widget.update)
+        self.display_widget.filter_changed.connect(self.sort_model.update_filters)
 
     def closeEvent(self, event):
         logging.debug('manager_widget closeEvent')
@@ -91,12 +92,12 @@ class ManagerWidget(QtWidgets.QWidget):
         value = self.settings.value('plugins/{}_colums'.format(self.plugin))
         if value:
             self.nodes_view.horizontalHeader().restoreState(value)
+            self.nodes_view.update_header_actions()
 
     def load(self):
         logging.debug('load')
         self.save_settings()
         self.manager.load()
-
         self.load_settings()
 
 
@@ -214,4 +215,3 @@ class DisplayWidget(QtWidgets.QWidget):
                 filters[attribute] = value
 
         self.filter_changed.emit(filters)
-        logging.debug(filters)

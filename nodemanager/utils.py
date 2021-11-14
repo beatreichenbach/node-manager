@@ -32,6 +32,61 @@ def unload_modules():
                 pass
 
 
+def title(text):
+    text = re.sub(r'(\w)([A-Z])', r'\1 \2', text).replace('_', ' ').title()
+    return text
+
+
+class FileSize(int):
+    factors = {
+        'KB': 1 << 10,
+        'MB': 1 << 20,
+        'GB': 1 << 30,
+        'TB': 1 << 40
+        }
+
+    unit = 'KB'
+
+    def __init__(self, bytes=0):
+        self.size = bytes
+
+    def __repr__(self):
+        return self.__str__()
+
+    def __str__(self):
+        text = '{:,.0f} {}'.format(self.size / (self.factors[self.unit]), self.unit)
+        return text
+
+    def __int__(self):
+        return int(self.size)
+
+    def __lt__(self, other):
+        return self.size < other.size
+
+    def __le__(self, other):
+        return self.size <= other.size
+
+    def __gt__(self, other):
+        return self.size > other.size
+
+    def __ge__(self, other):
+        return self.size >= other.size
+
+    def __eq__(self, other):
+        return self.size == other.size
+
+    def __ne__(self, other):
+        return self.size != other.size
+
+    @classmethod
+    def from_file(cls, filepath):
+        if os.path.isfile(filepath):
+            size = os.path.getsize(filepath)
+        else:
+            size = 0
+        return cls(size)
+
+
 class Settings(QtCore.QSettings):
     def __init__(self):
         self.settings_path = os.path.dirname(__file__)
@@ -87,61 +142,6 @@ class NoSelectionException(Exception):
 
 class NotFoundException(Exception):
     message = 'Not found.'
-
-
-class FileSize(int):
-    factors = {
-        'KB': 1 << 10,
-        'MB': 1 << 20,
-        'GB': 1 << 30,
-        'TB': 1 << 40
-        }
-
-    unit = 'KB'
-
-    def __init__(self, bytes=0):
-        self.size = bytes
-
-    def __repr__(self):
-        return self.__str__()
-
-    def __str__(self):
-        text = '{:,.0f} {}'.format(self.size / (self.factors[self.unit]), self.unit)
-        return text
-
-    def __int__(self):
-        return int(self.size)
-
-    def __lt__(self, other):
-        return self.size < other.size
-
-    def __le__(self, other):
-        return self.size <= other.size
-
-    def __gt__(self, other):
-        return self.size > other.size
-
-    def __ge__(self, other):
-        return self.size >= other.size
-
-    def __eq__(self, other):
-        return self.size == other.size
-
-    def __ne__(self, other):
-        return self.size != other.size
-
-    @classmethod
-    def from_file(cls, filepath):
-        if os.path.isfile(filepath):
-            size = os.path.getsize(filepath)
-        else:
-            size = 0
-        return cls(size)
-
-
-def title(text):
-    text = re.sub(r'(\w)([A-Z])', r'\1 \2', text).replace('_', ' ').title()
-    return text
 
 
 if __name__ == '__main__':

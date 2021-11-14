@@ -27,18 +27,14 @@ class Manager(object):
     settings_defaults = {
         }
 
-    def __init__(self, parent=None):
+    def __init__(self):
         self.settings = utils.Settings()
         self.init_settings()
-        self.parent = parent
+
         self.actions = OrderedDict()
         self.filters = []
-
-        # these shouldn't exist, just put in init
-        self.setActions()
-        self.setFilters()
-
         self.model = nodes_table.NodesModel()
+        self.table_view = None
 
     def init_settings(self):
         self.settings.beginGroup(self.settings_group)
@@ -68,7 +64,6 @@ class Manager(object):
             self.filters.append(attribute)
 
     def load(self):
-
         try:
             self.load_plugin()
         except RuntimeError:
@@ -84,16 +79,11 @@ class Manager(object):
     def nodes(self):
         return []
 
-    def setActions(self):
-        pass
-
-    def setFilters(self):
-        pass
-
     def selected_nodes(self):
         nodes = []
-        for row in self.parent.nodes_view.selectionModel().selectedRows():
-            nodes.append(self.model.itemFromIndex(row).data())
+        if self.table_view:
+            for row in self.table_view.selectionModel().selectedRows():
+                nodes.append(self.model.itemFromIndex(row).data())
 
         return nodes
 
@@ -120,6 +110,10 @@ class Node(object):
 
     def __str__(self):
         return self.name
+
+    @property
+    def name(self):
+        return str(self.node)
 
 
 class Attribute(object):
