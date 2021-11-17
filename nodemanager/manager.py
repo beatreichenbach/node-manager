@@ -53,7 +53,7 @@ class Manager(object):
 
     def addAction(self, group, text, func):
         action = QtWidgets.QAction(text)
-        action.triggered.connect(func)
+        action.triggered.connect(lambda: func(self.selected_nodes()))
         actions = self.actions.get(group, set())
         actions.add(action)
         self.actions[group] = actions
@@ -81,20 +81,13 @@ class Manager(object):
     def selected_nodes(self):
         nodes = []
         if self.table_view:
-            for row in self.table_view.selectionModel().selectedRows():
-                nodes.append(self.model.itemFromIndex(row).data())
+            for selected_index in self.table_view.selectionModel().selectedRows():
+                index = self.table_view.model().mapToSource(selected_index)
+                node = self.model.data(index, role=QtCore.Qt.UserRole + 1)
+                if node:
+                    nodes.append(node)
 
         return nodes
-
-
-class Action(object):
-    def __init__(self, text, func, group='Node'):
-        self.text = text
-        self.group = group
-        self.func = func
-
-    def hash(self):
-        return hash((self.text, self.group))
 
 
 class Node(object):
@@ -115,23 +108,5 @@ class Node(object):
         return str(self.node)
 
 
-class Attribute(object):
-    def __init__(self, name, type_):
-        self.name = name
-        self.type = type_
-
-    def __repr__(self):
-        type_ = self.type.__name__ if hasattr(self.type, '__name__') else self.type
-        return 'Attribute({}, {})'.format(self.name, type_)
-
-    def __str__(self):
-        return self.name
-
-    @property
-    def display_name(self):
-        return self.name.replace('_', ' ').title()
-
-
 if __name__ == '__main__':
-    attr = Attribute('count', None)
-    print(repr(attr))
+    pass

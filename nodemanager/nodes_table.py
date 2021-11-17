@@ -119,7 +119,7 @@ class NodesModel(QtGui.QStandardItemModel):
         if role in (QtCore.Qt.DisplayRole, QtCore.Qt.EditRole) and callable(data):
             data = data()
             # if index.column() == 0:
-            logging.debug((index, data, role))
+            # logging.debug((index, data, role))
             super(NodesModel, self).setData(index, data, role)
         return data
 
@@ -194,15 +194,6 @@ class SortModel(QtCore.QSortFilterProxyModel):
 
     def filterAcceptsRow(self, source_row, source_parent):
         model = self.sourceModel()
-        # index = model.index(source_row, 0, source_parent)
-        # node = model.data(index, QtCore.Qt.UserRole + 1)
-
-        # headers = []
-        # for i in range(model.columnCount()):
-        #     headers.append(model.headerData(i, QtCore.Qt.Horizontal, QtCore.Qt.UserRole + 1))
-
-        # if not node:
-        #     return True
 
         for attribute, filter_value in self.filters.items():
             try:
@@ -212,7 +203,6 @@ class SortModel(QtCore.QSortFilterProxyModel):
             index = model.index(source_row, column, source_parent)
 
             item_value = self.value(model.data(index))
-            logging.debug(item_value)
             filter_value = self.value(filter_value)
 
             if isinstance(item_value, list):

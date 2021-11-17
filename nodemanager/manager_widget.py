@@ -168,6 +168,7 @@ class DisplayWidget(QtWidgets.QWidget):
             child = self.filter_lay.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
+        self.filter_grp.setVisible(False)
 
     def update(self):
         self.update_filters()
@@ -211,6 +212,7 @@ class DisplayWidget(QtWidgets.QWidget):
                 signal.connect(self.filter_input_changed)
                 self.filter_widgets[attribute] = widget
                 self.filter_lay.addRow(utils.title(attribute), widget)
+                self.filter_grp.setVisible(True)
 
     def filter_input_changed(self):
         filters = {}

@@ -1,6 +1,6 @@
 import os
 import sys
-from PySide2 import QtUiTools, QtWidgets
+from PySide2 import QtUiTools, QtWidgets, QtCore
 import logging
 
 
@@ -16,6 +16,19 @@ def load_ui(parent, file_name):
     widget = loader.load(ui_path)
     parent.setLayout(widget.layout())
     parent.__dict__.update(widget.__dict__)
+
+    attrs = ['geometry', 'windowTitle', 'minimumSize']
+    for attr in attrs:
+
+        set_func = getattr(parent, 'set{}'.format(attr[0].upper() + attr[1:]))
+        value = getattr(widget, attr).__call__()
+
+        if attr == 'geometry':
+            parent.resize(value.width(), value.height())
+            continue
+        set_func(value)
+
+    return widget
 
 
 def show(cls):
