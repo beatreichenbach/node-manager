@@ -91,6 +91,10 @@ class Node(manager.Node):
     def name(self, value):
         self.node = cmds.rename(self.node, value)
 
+    @property
+    def exists(self):
+        return cmds.objExists(self.node)
+
 
 class Installer(setup.Installer):
     # def __init__(self):

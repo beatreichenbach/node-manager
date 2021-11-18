@@ -53,10 +53,19 @@ class Manager(object):
 
     def addAction(self, group, text, func):
         action = QtWidgets.QAction(text)
-        action.triggered.connect(lambda: func(self.selected_nodes()))
+        action.triggered.connect(lambda: self.runAction(func))
         actions = self.actions.get(group, set())
         actions.add(action)
         self.actions[group] = actions
+
+    def runAction(self, func):
+        nodes = [node for node in self.selected_nodes() if node.exists]
+        if not nodes:
+            return
+        if func.__name__ == 'generate_tx':
+            func(nodes, self.widget)
+            return
+        func(nodes)
 
     def addFilter(self, attribute):
         if attribute not in self.filters:

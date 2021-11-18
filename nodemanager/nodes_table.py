@@ -107,19 +107,14 @@ class NodesView(QtWidgets.QTableView):
 
 
 class NodesModel(QtGui.QStandardItemModel):
+    # todo: add function to invalidate loaded items, in case of generate tx/find files etc.
     updated = QtCore.Signal()
 
     def data(self, index, role=QtCore.Qt.DisplayRole):
         # override to enable deferred loading of items
         data = super(NodesModel, self).data(index, role)
-
-        # if role in (QtCore.Qt.DisplayRole, QtCore.Qt.EditRole) and index.column() == 0:
-        #     logging.debug(data)
-
         if role in (QtCore.Qt.DisplayRole, QtCore.Qt.EditRole) and callable(data):
             data = data()
-            # if index.column() == 0:
-            # logging.debug((index, data, role))
             super(NodesModel, self).setData(index, data, role)
         return data
 
@@ -244,7 +239,7 @@ class Delegate(QtWidgets.QStyledItemDelegate):
     @classmethod
     def fromValue(cls, value, parent=None):
         if isinstance(value, Enum):
-            delegate = EnumDelegate(parent, enum=value.__class__)
+            delegate = EnumDelegate(enum=value.__class__, parent=parent)
         elif isinstance(value, utils.FileSize):
             delegate = FileSizeDelegate(parent)
         elif isinstance(value, QtGui.QColor):
@@ -294,8 +289,8 @@ class BoolDelegate(Delegate):
 
 
 class EnumDelegate(Delegate):
-    def __init__(self, *args, enum):
-        super(EnumDelegate, self).__init__(*args)
+    def __init__(self, enum, parent=None):
+        super(EnumDelegate, self).__init__(parent)
         self.enum = enum
 
     def displayText(self, value, locale):

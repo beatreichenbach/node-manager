@@ -4,6 +4,9 @@ import os
 import re
 import logging
 import glob
+import time
+import shutil
+
 from enum import Enum
 
 from maya import cmds, mel
@@ -25,11 +28,11 @@ class Manager(maya.Manager):
         self.addAction('File', 'Find and Replace', find_and_replace)
         self.addAction('File', 'Relocate', relocate)
         self.addAction('File', 'Find Files', find_files)
-        self.addAction('File', 'Open', None)
+        self.addAction('File', 'Open', open_file)
         self.addAction('File', 'Open Directory', open_directory)
-        self.addAction('Parameters', 'Auto Color Space', None)
-        self.addAction('Parameters', 'Auto Filter', None)
-        self.addAction('Tiled', 'Generate TX', None)
+        self.addAction('Parameters', 'Auto Color Space', auto_colorspace)
+        self.addAction('Parameters', 'Auto Filter', auto_filter)
+        self.addAction('Tiled', 'Generate TX', generate_tx)
         self.addAction('Tiled', 'Switch to Raw', None)
         self.addAction('Tiled', 'Switch to TX', None)
         self.addAction('Node', 'Convert', None)
@@ -59,6 +62,7 @@ class Node(maya.Node):
     all attributes should stay live?
     alternatively we store them on the node object and only refresh when the path attribute is being
     set on the pytthon object. it should probably be consistent but might not make sense to do so.
+    in cations such as auto color space, we should cache that though.
     '''
 
     _file_size = None
@@ -110,10 +114,7 @@ class Node(maya.Node):
     @filepath.setter
     def filepath(self, value):
         self._file_size = None
-        # value = value.replace('\\', '/')
-        logging.debug(value)
         self.set_node_attr('filename', value)
-        logging.debug(self.filepath)
 
     @property
     def filename(self):
@@ -187,13 +188,38 @@ class Node(maya.Node):
         return is_file_sequence
 
 
+def open_file(nodes):
+    node = nodes[-1]
+    filepath = node.filepath
+    if node.is_file_sequence:
+        if not os.path.isdir(node.directory):
+            return
+
+        # todo: move into function
+        tags = '|'.join(node._file_sequence_tags)
+        file_pattern = re.sub(tags, r'\d+', re.escape(node.filename))
+        regex = re.compile(file_pattern)
+
+        for file in os.listdir(node.directory):
+            if regex.search(file):
+                filepath = os.path.join(node.directory, file)
+                break
+
+    if not os.path.isfile(filepath):
+        return
+
+    os.startfile(filepath)
+
+
 def open_directory(nodes):
     if nodes:
         os.startfile(nodes[-1].directory)
 
 
 def set_directory(nodes):
-    values = util_dialog.SetDirectoryDialog.get_values()
+    path = nodes[-1].directory
+    values = util_dialog.SetDirectoryDialog.get_values(path)
+
     if not values:
         return
     for node in nodes:
@@ -204,7 +230,7 @@ def select_dependents(nodes):
     objects = []
 
     for node in nodes:
-        future = cmds.listHistory(node, future=True)
+        future = cmds.listHistory(node.node, future=True)
         shading_engines = cmds.ls(*future, type='shadingEngine')
 
         for shading_engine in shading_engines:
@@ -227,25 +253,57 @@ def graph_nodes(nodes):
 
 
 def remove(nodes):
-    cmds.delete(nodes)
+    for node in nodes:
+        if node.exists:
+            cmds.delete(node)
 
 
 def relocate(nodes):
-    pass
+    # todo: add parent
+    path = nodes[-1].directory
+    values = util_dialog.RelocateDialog.get_values(path)
+
+    for node in nodes:
+        filepaths = []
+
+        if node.is_file_sequence:
+            tags = '|'.join(node._file_sequence_tags)
+            file_pattern = re.sub(tags, r'\d+', re.escape(node.filename))
+            regex = re.compile(file_pattern)
+
+            for file in os.listdir(node.directory):
+                if regex.search(file):
+                    filepaths.append(os.path.join(node.directory, file))
+
+        else:
+            filepaths.append(node.filepath)
+
+        for filepath in filepaths:
+            if os.path.isfile(filepath):
+                if values['copy']:
+                    shutil.copy(node.filepath, path)
+                else:
+                    shutil.move(node.filepath, path)
+
+        if values['update']:
+            node.directory = path
 
 
 def find_files(nodes):
-    values = util_dialog.FindFilesDialog.get_values()
+    path = nodes[-1].directory
+    values = util_dialog.FindFilesDialog.get_values(path)
 
     if not values or not os.path.isdir(values['path']):
         return
 
     for node in nodes:
-        # replace with actual status constant
+        # todo: replace with actual status constant
         if node.status or not node.filename:
             continue
 
         file_pattern = re.escape(node.filename)
+
+        # todo: move into function
         if node.is_file_sequence:
             tags = '|'.join(node._file_sequence_tags)
             file_pattern = re.sub(tags, r'\d+', re.escape(node.filename))
@@ -253,6 +311,7 @@ def find_files(nodes):
         logging.debug(file_pattern)
         file_sequence_regex = re.compile(file_pattern)
 
+        # todo: cache directories with success
         for root, dirs, files in os.walk(values['path']):
             for file in files:
                 filepath = os.path.join(root, file)
@@ -269,6 +328,86 @@ def find_files(nodes):
         node.filepath = filepath
 
 
+
 def find_and_replace(nodes):
-    dialog = QtWidgets.QDialog()
-    dialog.setLayout()
+    path = nodes[-1].directory
+    values = util_dialog.FindAndReplaceDialog.get_values(path)
+
+    if not values:
+        return
+
+    if values['regex']:
+        pattern = values['find']
+    else:
+        pattern = re.escape(values['find'])
+
+    flags = 0
+    if values['ignorecase']:
+        flags = flags | re.IGNORECASE
+
+    regex = re.compile(pattern, flags)
+
+    for node in nodes:
+        filepath = regex.sub(values['replace'], node.filepath)
+        node.filepath = filepath
+
+
+def auto_filter(nodes):
+    for node in nodes:
+        node.filter = 0
+        node.mipmapBias = 0
+
+
+def auto_colorspace(nodes):
+    for node in nodes:
+        if any(['color' in channel.lower() for channel in node.channels]):
+            node.colorSpace = 'sRGB'
+        else:
+            node.colorSpace = 'linear'
+
+
+def generate_tx(nodes, parent):
+    runnable = GenerateTXWorker
+
+    util_dialog.ProcessDialog.process(nodes, runnable)
+
+    # dialog = parent.parent().parent().parent()
+    # thread.progress.connect(lambda i: dialog.main_prgbar.setValue(i * 10))
+    # thread.started.connect(lambda: dialog.main_prgbar.setVisible(True))
+    # thread.finished.connect(lambda: dialog.main_prgbar.setVisible(False))
+    # thread.start()
+
+
+class GenerateTXThread(QtCore.QThread):
+    progress = QtCore.Signal(int)
+
+    def run(self):
+        self.running = True
+        try:
+            for i in range(0, 10):
+                if self.running is True:
+                    self.progress.emit(i)
+                    time.sleep(1.5)
+        except Exception as err:
+            logging.debug(err)
+            self.progress.emit(-1)
+        finally:
+            self.running = False
+
+
+class GenerateTXWorker(QtCore.QRunnable):
+    def __init__(self, node):
+        super(GenerateTXWorker, self).__init__()
+        self.node = node
+        self.signals = WorkerSignals()
+        self.finished = self.signals.finished
+
+    def run(self):
+        logging.debug('started')
+        time.sleep(1)
+        logging.debug('finished')
+        self.finished.emit(self.node)
+
+
+class WorkerSignals(QtCore.QObject):
+    finished = QtCore.Signal(Node)

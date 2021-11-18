@@ -46,7 +46,7 @@
      <item row="2" column="1">
       <widget class="QCheckBox" name="case_chk">
        <property name="text">
-        <string>Case sensitive</string>
+        <string>Ignore case</string>
        </property>
       </widget>
      </item>

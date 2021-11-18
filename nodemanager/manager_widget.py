@@ -34,7 +34,10 @@ class ManagerWidget(QtWidgets.QWidget):
 
         self.init_ui()
 
+        # no likey
         self.manager.table_view = self.nodes_view
+        self.manager.widget = self
+
         self.action_widget.update_actions()
 
         self.connect_ui()
@@ -93,7 +96,6 @@ class ManagerWidget(QtWidgets.QWidget):
         # setting splitter size when identical seems to cause it to reset
         if value and self.splitter.sizes() != value:
             self.splitter.setSizes(value)
-        # logging.debug(['manager_widget', 'load_settings', self.plugin, value, self.splitter.sizes()])
 
         value = self.settings.value('plugins/{}_columns'.format(self.plugin))
         if value:
