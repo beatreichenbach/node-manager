@@ -37,9 +37,6 @@ class ManagerDialog(QtWidgets.QDialog):
         self.connect_ui()
         self.load_settings()
 
-        # for testing purposes only
-        self.manager_widget.load()
-
     def init_ui(self):
         gui_utils.load_ui(self, 'manager_dialog.ui')
 

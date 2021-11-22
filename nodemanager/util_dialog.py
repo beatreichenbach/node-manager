@@ -152,65 +152,6 @@ class SetDirectoryDialog(QtWidgets.QDialog):
             return dialog.values()
 
 
-class ProcessDialog(QtWidgets.QDialog):
-    def __init__(self, parent=None):
-        super(ProcessDialog, self).__init__(parent)
-        self.init_ui()
-        self.connect_ui()
-        self.nodes = []
-        self.runnable = None
-        self.nodes_completed = 0
-
-        self.threadpool = QtCore.QThreadPool(self)
-        self.threadpool.setMaxThreadCount(4)
-
-    def init_ui(self):
-        gui_utils.load_ui(self, 'process_dialog.ui')
-
-    def connect_ui(self):
-        self.button_box.rejected.connect(self.reject)
-
-    def set_nodes(self, nodes):
-        self.nodes = nodes
-        for node in nodes:
-            row = self.items_table.rowCount()
-            self.items_table.insertRow(row)
-
-            item = QtWidgets.QTableWidgetItem(node.name)
-            item.setData(QtCore.Qt.UserRole, node)
-            self.items_table.setItem(row, 0, item)
-
-            item = QtWidgets.QTableWidgetItem('Waiting')
-            self.items_table.setItem(row, 1, item)
-
-            runnable = self.runnable(node)
-            runnable.finished.connect(self.node_finished)
-            self.threadpool.start(runnable)
-        runnable.finished.connect(self.finished)
-
-    def node_finished(self, node):
-        items = self.items_table.findItems(node.name, QtCore.Qt.MatchExactly)
-        if items:
-            self.items_table.item(items[0].row(), 1).setText('Done')
-        self.nodes_completed = self.nodes_completed + 1
-
-        self.main_prgbar.setValue(self.nodes_completed / len(self.nodes) * 100)
-
-    def finished(self):
-        self.accept()
-
-    @classmethod
-    def process(cls, nodes, runnable):
-        dialog = cls()
-        dialog.runnable = runnable
-        dialog.set_nodes(nodes)
-
-        # thread.start()
-        result = dialog.exec_()
-        if result == QtWidgets.QDialog.Accepted:
-            return dialog.nodes
-
-
 if __name__ == '__main__':
     logging.getLogger().setLevel(logging.DEBUG)
 

@@ -12,6 +12,7 @@ from enum import Enum
 from maya import cmds, mel
 from PySide2 import QtWidgets, QtGui, QtCore
 
+from .. import processing
 from . import maya
 from .. import utils
 from .. import manager
@@ -367,47 +368,15 @@ def auto_colorspace(nodes):
 
 
 def generate_tx(nodes, parent):
-    runnable = GenerateTXWorker
+    runnable = TXRunnable
 
-    util_dialog.ProcessDialog.process(nodes, runnable)
-
-    # dialog = parent.parent().parent().parent()
-    # thread.progress.connect(lambda i: dialog.main_prgbar.setValue(i * 10))
-    # thread.started.connect(lambda: dialog.main_prgbar.setVisible(True))
-    # thread.finished.connect(lambda: dialog.main_prgbar.setVisible(False))
-    # thread.start()
+    processing.ProcessDialog.process(nodes, runnable)
 
 
-class GenerateTXThread(QtCore.QThread):
-    progress = QtCore.Signal(int)
-
-    def run(self):
-        self.running = True
-        try:
-            for i in range(0, 10):
-                if self.running is True:
-                    self.progress.emit(i)
-                    time.sleep(1.5)
-        except Exception as err:
-            logging.debug(err)
-            self.progress.emit(-1)
-        finally:
-            self.running = False
-
-
-class GenerateTXWorker(QtCore.QRunnable):
-    def __init__(self, node):
-        super(GenerateTXWorker, self).__init__()
-        self.node = node
-        self.signals = WorkerSignals()
-        self.finished = self.signals.finished
-
-    def run(self):
-        logging.debug('started')
+class TXRunnable(processing.NodeRunnable):
+    def process(self):
         time.sleep(1)
-        logging.debug('finished')
-        self.finished.emit(self.node)
+        self.log('Success Bitch')
 
-
-class WorkerSignals(QtCore.QObject):
-    finished = QtCore.Signal(Node)
+    def display_text(self):
+        return self.node.filepath

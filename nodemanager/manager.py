@@ -59,6 +59,7 @@ class Manager(object):
         self.actions[group] = actions
 
     def runAction(self, func):
+        # todo: update model from node changes
         nodes = [node for node in self.selected_nodes() if node.exists]
         if not nodes:
             return

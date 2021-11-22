@@ -6,14 +6,14 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1029</width>
-    <height>1016</height>
+    <width>1047</width>
+    <height>780</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>Form</string>
   </property>
-  <layout class="QVBoxLayout" name="verticalLayout">
+  <layout class="QVBoxLayout" name="main_lay" stretch="0,0,1">
    <item>
     <layout class="QHBoxLayout" name="parameters_lay" stretch="0,0,0,0">
      <item>
@@ -66,46 +66,7 @@
     </widget>
    </item>
    <item>
-    <widget class="QScrollArea" name="display_scroll">
-     <property name="focusPolicy">
-      <enum>Qt::NoFocus</enum>
-     </property>
-     <property name="widgetResizable">
-      <bool>true</bool>
-     </property>
-     <widget class="QWidget" name="display_widget">
-      <property name="geometry">
-       <rect>
-        <x>0</x>
-        <y>0</y>
-        <width>1009</width>
-        <height>455</height>
-       </rect>
-      </property>
-      <layout class="QVBoxLayout" name="display_lay"/>
-     </widget>
-    </widget>
-   </item>
-   <item>
-    <widget class="QScrollArea" name="list_scroll">
-     <property name="focusPolicy">
-      <enum>Qt::NoFocus</enum>
-     </property>
-     <property name="widgetResizable">
-      <bool>true</bool>
-     </property>
-     <widget class="QWidget" name="list_widget">
-      <property name="geometry">
-       <rect>
-        <x>0</x>
-        <y>0</y>
-        <width>1009</width>
-        <height>454</height>
-       </rect>
-      </property>
-      <layout class="QHBoxLayout" name="list_lay"/>
-     </widget>
-    </widget>
+    <widget class="QWidget" name="nodes_widget" native="true"/>
    </item>
   </layout>
  </widget>

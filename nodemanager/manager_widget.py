@@ -20,6 +20,7 @@ except ImportError:
 
 
 class ManagerWidget(QtWidgets.QWidget):
+    # todo: when actions are taller than table, bottom scroll disappears
     def __init__(self, parent=None, dcc='', context='', node=''):
         super(ManagerWidget, self).__init__(parent)
 
@@ -43,13 +44,12 @@ class ManagerWidget(QtWidgets.QWidget):
         self.connect_ui()
         self.load_settings()
 
+        # for testing purposes only
+        # todo: add setting for autoload
+        self.load()
+
     def init_ui(self):
         gui_utils.load_ui(self, 'manager_widget.ui')
-
-        self.splitter = QtWidgets.QSplitter()
-        self.splitter.addWidget(self.display_scroll)
-        self.splitter.addWidget(self.list_scroll)
-        self.layout().addWidget(self.splitter)
 
         # table view
         self.nodes_view = nodes_table.NodesView(self)
@@ -57,15 +57,33 @@ class ManagerWidget(QtWidgets.QWidget):
         self.sort_model.setSortCaseSensitivity(QtCore.Qt.CaseInsensitive)
         self.sort_model.setSourceModel(self.manager.model)
         self.nodes_view.setModel(self.sort_model)
-        self.list_lay.addWidget(self.nodes_view)
 
         # action widget
+        self.action_scroll = VerticalScrollArea()
         self.action_widget = ActionWidget(self.manager)
-        self.list_lay.addWidget(self.action_widget)
+        self.action_scroll.setWidget(self.action_widget)
+        self.action_scroll.setMinimumSize(self.action_scroll.sizeHint())
+        self.action_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
 
         # display widget
+        display_scroll = QtWidgets.QScrollArea()
         self.display_widget = DisplayWidget(self.nodes_view)
-        self.display_lay.layout().insertWidget(0, self.display_widget)
+        display_scroll.setWidget(self.display_widget)
+
+        # nodes widget
+        nodes_frame = QtWidgets.QFrame()
+        nodes_frame.setFrameShape(display_scroll.frameShape())
+        nodes_frame.setFrameStyle(display_scroll.frameStyle())
+        nodes_frame.setLayout(QtWidgets.QHBoxLayout())
+        nodes_frame.layout().addWidget(self.nodes_view)
+        nodes_frame.layout().addWidget(self.action_scroll)
+        nodes_frame.layout().setStretch(0, 1)
+
+        # splitter
+        self.splitter = QtWidgets.QSplitter()
+        self.splitter.addWidget(display_scroll)
+        self.splitter.addWidget(nodes_frame)
+        self.layout().replaceWidget(self.nodes_widget, self.splitter)
 
         self.setStyleSheet('QTableView::item {border: 0px; padding: 0px 10px;}')
 
@@ -82,14 +100,14 @@ class ManagerWidget(QtWidgets.QWidget):
     def save_settings(self):
         self.settings.setValue('manager_widget/splitter', self.splitter.sizes())
 
+        self.settings.beginGroup(self.plugin)
         header = self.nodes_view.horizontalHeader()
         if header.count():
-            value = header.saveState()
-            self.settings.setValue('plugins/{}_columns'.format(self.plugin), value)
+            self.settings.setValue('header_state', header.saveState())
 
-        value = header.count()
-        if value:
-            self.settings.setValue('plugins/{}_columncount'.format(self.plugin), value)
+        if header.count():
+            self.settings.setValue('header_count', header.count())
+        self.settings.endGroup()
 
     def load_settings(self):
         value = self.settings.list('manager_widget/splitter')
@@ -97,17 +115,18 @@ class ManagerWidget(QtWidgets.QWidget):
         if value and self.splitter.sizes() != value:
             self.splitter.setSizes(value)
 
-        value = self.settings.value('plugins/{}_columns'.format(self.plugin))
+        self.settings.beginGroup(self.plugin)
+        value = self.settings.value('header_state')
         if value:
             header = self.nodes_view.horizontalHeader()
-            column_count = self.settings.value('plugins/{}_columncount'.format(self.plugin))
-            if int(column_count) == header.count():
+            header_count = self.settings.value('header_count')
+            if int(header_count) == header.count():
                 header.restoreState(value)
                 self.nodes_view.update_header_actions()
+        self.settings.endGroup()
 
     def load(self):
         logging.debug('load')
-        # save settings to keep columns the same
         self.save_settings()
         self.manager.load()
         self.load_settings()
@@ -144,6 +163,7 @@ class ActionWidget(QtWidgets.QWidget):
                 group_box.layout().addWidget(button)
 
         self.layout().addStretch(1)
+        self.resize(self.sizeHint())
 
 
 class DisplayWidget(QtWidgets.QWidget):
@@ -229,3 +249,14 @@ class DisplayWidget(QtWidgets.QWidget):
                 filters[attribute] = value
 
         self.filter_changed.emit(filters)
+
+
+class VerticalScrollArea(QtWidgets.QScrollArea):
+    def eventFilter(self, watched, event):
+        if watched == self.verticalScrollBar():
+            if event.type() in (QtCore.QEvent.Show, QtCore.QEvent.Hide) and self.widget():
+                min_width = self.widget().sizeHint().width()
+                if event.type() == QtCore.QEvent.Show:
+                    min_width += self.verticalScrollBar().sizeHint().width()
+                self.setMinimumWidth(min_width)
+        return super(VerticalScrollArea, self).eventFilter(watched, event)

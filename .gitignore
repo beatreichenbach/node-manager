@@ -143,4 +143,5 @@ cython_debug/
 
 # Project files
 repath/
+resource/
 *.ini

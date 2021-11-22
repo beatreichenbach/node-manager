@@ -35,7 +35,7 @@ class NodesView(QtWidgets.QTableView):
         return model
 
     def init_ui(self):
-        self.setSelectionBehavior(self.SelectRows)
+        self.setSelectionBehavior(QtWidgets.QTableView.SelectRows)
         self.setAlternatingRowColors(True)
         self.setShowGrid(False)
         self.setSortingEnabled(True)
@@ -99,7 +99,7 @@ class NodesView(QtWidgets.QTableView):
             return
 
         menu = QtWidgets.QMenu(self)
-        action = menu.addAction('Edit Selected')
+        action = menu.addAction('Edit')
         action.triggered.connect(lambda: self.edit(index))
 
         # todo: add other required actions
@@ -223,9 +223,11 @@ class Delegate(QtWidgets.QStyledItemDelegate):
     def setModelData(self, editor, model, index, value=None):
         # Set ModelData on all selected rows
 
+        # Sometimes the right click happens on not selected row
         indexes = [index]
         if self.parent() and self.parent().selectionModel():
             indexes.extend(self.parent().selectionModel().selectedRows(index.column()))
+        indexes = list(set(indexes))
 
         for item_index in indexes:
             if value is not None:
