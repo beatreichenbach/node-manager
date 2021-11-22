@@ -37,13 +37,14 @@ class ProcessDialog(QtWidgets.QDialog):
         self.process_view.setModel(self.model)
 
         self.threadpool = QtCore.QThreadPool(self)
-        self.threadpool.setMaxThreadCount(4)
+        self.threadpool.setMaxThreadCount(2)
 
     def init_ui(self):
         gui_utils.load_ui(self, 'process_dialog.ui')
 
-        view = ProcessView(self)
+        view = ProcessView(dialog=self)
         self.layout().replaceWidget(self.process_view, view)
+        self.process_view.setParent(None)
         self.process_view = view
 
         self.status_bar = QtWidgets.QStatusBar()
@@ -75,18 +76,17 @@ class ProcessDialog(QtWidgets.QDialog):
     def set_nodes(self, nodes):
         self.nodes = nodes
 
-        self.runnable_count = len(nodes)
-        self.status_bar.showMessage('Processing {} items.'.format(self.runnable_count))
-
         for node in nodes:
             items = []
 
             item = QtGui.QStandardItem()
             item.setData(self.state_text(ProcessState.PENDING), QtCore.Qt.DisplayRole)
             item.setData(self.state_icon(ProcessState.PENDING), QtCore.Qt.DecorationRole)
+            item.setData(ProcessState.PENDING)
             items.append(item)
 
             runnable = self.runnable(node, item)
+            self.node_created()
 
             item = QtGui.QStandardItem()
             item.setData(runnable.display_text(), QtCore.Qt.DisplayRole)
@@ -100,17 +100,24 @@ class ProcessDialog(QtWidgets.QDialog):
 
             self.threadpool.start(runnable)
 
+    def node_created(self):
+        self.runnable_count += 1
+        self.status_bar.showMessage('Processing {} items.'.format(self.runnable_count))
+        self.main_prgbar.setValue(self.nodes_completed / self.runnable_count * 100)
+
     def node_started(self, node, item):
         state_item = self.model.item(item.row(), 0)
         state_item.setData(self.state_icon(ProcessState.INPROGRESS), QtCore.Qt.DecorationRole)
         state_item.setData(self.state_text(ProcessState.INPROGRESS), QtCore.Qt.DisplayRole)
+        state_item.setData(ProcessState.INPROGRESS)
 
     def node_finished(self, node, item):
         state_item = self.model.item(item.row(), 0)
         state_item.setData(self.state_icon(ProcessState.COMPLETED), QtCore.Qt.DecorationRole)
         state_item.setData(self.state_text(ProcessState.COMPLETED), QtCore.Qt.DisplayRole)
+        state_item.setData(ProcessState.COMPLETED)
 
-        self.nodes_completed = self.nodes_completed + 1
+        self.nodes_completed += 1
 
         self.main_prgbar.setValue(self.nodes_completed / self.runnable_count * 100)
 
@@ -122,6 +129,7 @@ class ProcessDialog(QtWidgets.QDialog):
     def process(cls, nodes, runnable):
         dialog = cls()
         dialog.runnable = runnable
+        # dialog.runnable.created.connect(dialog.node_created)
         dialog.set_nodes(nodes)
 
         # thread.start()
@@ -189,38 +197,45 @@ class ProcessView(QtWidgets.QTableView):
             indexes.extend(self.selectionModel().selectedRows(index.column()))
         indexes = list(set(indexes))
 
+        # really?
+        for item_index in indexes:
+            item = self.model().itemFromIndex(item_index)
+            if item.data() in [ProcessState.PENDING, ProcessState.OPEN]:
+                indexes.remove(item_index)
+
         # talk about this not belonging here
-        self.dialog.nodes_completed = self.dialog.threadpool.activeThreadCount()
-        logging.debug(self.dialog.threadpool.activeThreadCount())
-        self.dialog.runnable_count = self.dialog.threadpool.activeThreadCount() + len(indexes)
-        self.dialog.main_prgbar.setValue(self.dialog.nodes_completed / self.dialog.runnable_count * 100)
-        self.dialog.status_bar.showMessage('Processing {} items.'.format(self.dialog.runnable_count))
+        # should rename these variables
+        logging.debug([self.dialog.runnable_count, self.dialog.nodes_completed, len(indexes)])
+        self.dialog.runnable_count = self.dialog.runnable_count - self.dialog.nodes_completed
+        logging.debug(self.dialog.runnable_count)
+        self.dialog.nodes_completed = 0
 
         for item_index in indexes:
             item = self.model().itemFromIndex(item_index)
             item.setData(self.dialog.state_text(ProcessState.PENDING), QtCore.Qt.DisplayRole)
             item.setData(self.dialog.state_icon(ProcessState.PENDING), QtCore.Qt.DecorationRole)
+            item.setData(ProcessState.PENDING)
 
             node = self.model().item(item_index.row(), 1).data()
 
             # lol we noticing some WET
             runnable = self.dialog.runnable(node, item)
+            self.dialog.node_created()
             runnable.started.connect(self.dialog.node_started)
             runnable.finished.connect(self.dialog.node_finished)
             self.dialog.threadpool.start(runnable)
 
     def show_log(self, index):
-        pass
-        # dialog = QtWidgets.QDialog()
-        # dialog.setLayout(QtWidgets.QVBoxLayout())
-        # text_edit = QtWidgets.QTextEdit()
+        dialog = QtWidgets.QDialog()
+        dialog.setLayout(QtWidgets.QVBoxLayout())
+        text_edit = QtWidgets.QTextEdit()
 
-        # item = self.model().item(index.row(), 0)
-        # log = item.data(QtCore.Qt.UserRole + 2)
-        # text_edit.setText(log or '')
-        # text_edit.setTextInteractionFlags(text_edit.textInteractionFlags() | ~QtCore.Qt.TextEditable)
-        # dialog.layout().addWidget(text_edit)
-        # dialog.exec_()
+        item = self.model().item(index.row(), 0)
+        log = item.data(QtCore.Qt.UserRole + 2)
+        text_edit.setText(log or '')
+        text_edit.setReadOnly(True)
+        dialog.layout().addWidget(text_edit)
+        dialog.exec_()
 
 
 class NodeRunnable(QtCore.QRunnable):
@@ -248,7 +263,7 @@ class NodeRunnable(QtCore.QRunnable):
         if log:
             log += '\n'
         log += text
-        self.model_item.setData(QtCore.Qt.UserRole + 2)
+        self.model_item.setData(log, QtCore.Qt.UserRole + 2)
         logging.debug(self.model_item.data(QtCore.Qt.UserRole + 2))
 
 

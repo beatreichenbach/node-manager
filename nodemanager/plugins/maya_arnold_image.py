@@ -375,7 +375,7 @@ def generate_tx(nodes, parent):
 
 class TXRunnable(processing.NodeRunnable):
     def process(self):
-        time.sleep(1)
+        time.sleep(4)
         self.log('Success Bitch')
 
     def display_text(self):
