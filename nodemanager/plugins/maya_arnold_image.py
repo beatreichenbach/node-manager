@@ -370,10 +370,10 @@ def auto_colorspace(nodes):
 def generate_tx(nodes, parent):
     runnable = TXRunnable
 
-    processing.ProcessDialog.process(nodes, runnable)
+    processing.ProcessingDialog.process(nodes, runnable)
 
 
-class TXRunnable(processing.NodeRunnable):
+class TXRunnable(processing.ProcessingRunnable):
     def process(self):
         time.sleep(4)
         self.log('Success Bitch')
