@@ -329,7 +329,6 @@ def find_files(nodes):
         node.filepath = filepath
 
 
-
 def find_and_replace(nodes):
     path = nodes[-1].directory
     values = util_dialog.FindAndReplaceDialog.get_values(path)
@@ -368,15 +367,13 @@ def auto_colorspace(nodes):
 
 
 def generate_tx(nodes, parent):
-    runnable = TXRunnable
+    runnable_cls = TXRunnable
 
-    processing.ProcessingDialog.process(nodes, runnable)
+    processing.ProcessingDialog.process(nodes, runnable_cls)
 
 
 class TXRunnable(processing.ProcessingRunnable):
-    def process(self):
-        time.sleep(4)
-        self.log('Success Bitch')
 
-    def display_text(self):
-        return self.node.filepath
+    @staticmethod
+    def display_text(node):
+        return node.filepath
