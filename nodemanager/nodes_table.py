@@ -342,6 +342,8 @@ class ColorDelegate(Delegate):
 
     def paint(self, painter, option, index):
         value = index.model().data(index, QtCore.Qt.EditRole)
+        if not value:
+            return
         option.rect.adjust(5, 5, -5, -5)
         painter.setBrush(value)
         painter.drawRect(option.rect)

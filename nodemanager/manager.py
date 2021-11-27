@@ -63,9 +63,6 @@ class Manager(object):
         nodes = [node for node in self.selected_nodes() if node.exists]
         if not nodes:
             return
-        if func.__name__ == 'generate_tx':
-            func(nodes, self.widget)
-            return
         func(nodes)
 
     def addFilter(self, attribute):

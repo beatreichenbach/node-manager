@@ -4,6 +4,7 @@ import logging
 import glob
 import time
 import shutil
+import subprocess
 from functools import partial
 from enum import Enum, unique
 from io import StringIO
@@ -61,8 +62,10 @@ class ProcessingDialog(QtWidgets.QDialog):
         self.process_view.restarted.connect(self.reset_progress)
 
     def reject(self):
-        self.status_bar.showMessage('Waiting for all running processes to exit...')
-        self.status_bar.repaint()
+        # todo: can this be put into a property?
+        if self.runnable_count - self.runnable_completed:
+            self.status_bar.showMessage('Waiting for all running processes to exit...')
+            self.status_bar.repaint()
 
         try:
             self.threadpool.clear()
@@ -78,11 +81,10 @@ class ProcessingDialog(QtWidgets.QDialog):
             logging.critical(e, exc_info=True)
         finally:
             self.status_bar.clearMessage()
+
         super(ProcessingDialog, self).reject()
 
     def set_nodes(self, nodes):
-        self.nodes = nodes
-
         for node in nodes:
             items = []
             processing_item = ProcessingItem(node, self.runnable_cls, self)
@@ -99,13 +101,15 @@ class ProcessingDialog(QtWidgets.QDialog):
 
             self.model.appendRow(items)
 
-            processing_item.created.connect(partial(self.item_created, item))
+            processing_item.queued.connect(partial(self.item_queued, item))
             processing_item.started.connect(partial(self.item_started, item))
             processing_item.finished.connect(partial(self.item_finished, item))
             processing_item.start()
-            # self.item_created(item)
 
-    def item_created(self, item):
+    def item_queued(self, item):
+        # todo: only call when needed
+        self.button_box.setStandardButtons(QtWidgets.QDialogButtonBox.Cancel)
+
         # start the runnable
         processing_item = item.data()
         self.threadpool.start(processing_item.runnable)
@@ -113,7 +117,6 @@ class ProcessingDialog(QtWidgets.QDialog):
 
         self.runnable_count += 1
         self.status_bar.showMessage('Processing {} items.'.format(self.runnable_count))
-        logging.debug(['created', self.runnable_count])
         self.update_progress()
 
     def item_started(self, item):
@@ -122,7 +125,6 @@ class ProcessingDialog(QtWidgets.QDialog):
     def item_finished(self, item):
         self.update_item(item)
         self.runnable_completed += 1
-        logging.debug(['finished', self.runnable_count])
         if self.runnable_count == self.runnable_completed:
             self.finished()
         self.update_progress()
@@ -134,7 +136,7 @@ class ProcessingDialog(QtWidgets.QDialog):
             if processing_item.state == ProcessingState.FAILED:
                 return
 
-        self.accept()
+        self.button_box.setStandardButtons(QtWidgets.QDialogButtonBox.Ok)
 
     def update_item(self, item):
         item = self.model.item(item.row(), 0)
@@ -146,12 +148,11 @@ class ProcessingDialog(QtWidgets.QDialog):
         item.setData(processing_item.display_text(), QtCore.Qt.DisplayRole)
 
     def update_progress(self):
-        logging.debug(['progress', self.runnable_count])
         self.main_prgbar.setValue(self.runnable_completed / self.runnable_count * 100)
+        # todo: only call when needed
         self.main_prgbar.setVisible(self.main_prgbar.value() != 100)
 
     def reset_progress(self):
-        logging.debug(['reset', self.runnable_count, self.runnable_completed])
         self.runnable_count = self.runnable_count - self.runnable_completed
         self.runnable_completed = 0
 
@@ -198,17 +199,19 @@ class ProcessingView(QtWidgets.QTableView):
 
         menu = QtWidgets.QMenu(self)
         action = menu.addAction('Restart')
-        action.triggered.connect(partial(self.restart, index))
+        action.triggered.connect(partial(self.run_action, self.restart, index))
+        action = menu.addAction('Restart (Verbose)')
+        action.triggered.connect(partial(self.run_action, self.restart_verbose, index,))
+        action = menu.addAction('Cancel')
+        action.triggered.connect(partial(self.run_action, self.cancel, index))
         action = menu.addAction('Show log')
-        action.triggered.connect(partial(self.show_log, index))
+        action.triggered.connect(partial(self.run_action, self.show_log, index))
 
         menu.popup(event.globalPos())
 
-    def restart(self, index):
+    def run_action(self, func, index):
         if not self.model():
             return
-
-        self.restarted.emit()
 
         # Sometimes the right click happens on not selected row
         indexes = [index]
@@ -216,27 +219,50 @@ class ProcessingView(QtWidgets.QTableView):
             indexes.extend(self.selectionModel().selectedRows(index.column()))
         indexes = sorted(list(set(indexes)), key=lambda i: i.row())
 
+        processing_items = []
         for item_index in indexes:
             processing_item = self.model().itemFromIndex(item_index).data()
+            processing_items.append(processing_item)
+        func(processing_items)
+
+    def cancel(self, items):
+        for processing_item in items:
+            processing_item.stop()
+
+    def restart_verbose(self, items):
+        self.restarted.emit()
+        for processing_item in items:
+            processing_item.logger.setLevel(logging.DEBUG)
             processing_item.restart()
 
-    def show_log(self, index):
-        item = self.model().itemFromIndex(index)
-        processing_item = item.data()
+    def restart(self, items):
+        self.restarted.emit()
+        for processing_item in items:
+            processing_item.logger.setLevel(logging.INFO)
+            processing_item.restart()
 
-        dialog = QtWidgets.QDialog()
+    def show_log(self, items):
+        if not items:
+            return
+        processing_item = items[-1]
+
+        dialog = QtWidgets.QDialog(self)
         dialog.setWindowTitle('Log')
         dialog.setLayout(QtWidgets.QVBoxLayout())
         text_edit = QtWidgets.QTextEdit()
-        text_edit.setText(processing_item.log_stream.getvalue())
+        text_edit.setText(processing_item.log)
         text_edit.setReadOnly(True)
 
         font = QtGui.QFont('Monospace')
         font.setStyleHint(QtGui.QFont.Monospace)
         text_edit.setFont(font)
+        dialog.text_edit = text_edit
 
         dialog.layout().addWidget(text_edit)
-        dialog.exec_()
+
+        processing_item.log_updated.connect(text_edit.setText)
+
+        dialog.show()
 
 
 class ProcessingRunnable(QtCore.QRunnable):
@@ -246,6 +272,8 @@ class ProcessingRunnable(QtCore.QRunnable):
         self.node = item.node
         self.logger = item.logger
         self.running = False
+
+        self._process = None
 
     def run(self):
         self.running = True
@@ -269,21 +297,41 @@ class ProcessingRunnable(QtCore.QRunnable):
         if not self.running:
             self.item._cancelled()
         else:
+            if self._process:
+                self._process.kill()
             self.running = False
 
     def process(self):
-        # example code
-        for i in range(8):
-            self.logger.debug(self.running)
-            if not self.running:
-                return
-            time.sleep(0.2)
-            self.logger.debug(i)
         return True
+        # example code
 
-    @staticmethod
-    def display_text(node):
-        return node.name
+    def popen(self, args, **kwargs):
+        startupinfo = None
+        if os.name == 'nt':
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
+        self._process = subprocess.Popen(
+            args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            startupinfo=startupinfo,
+            text=True,
+        )
+
+        if self.logger.level == logging.DEBUG:
+            while self._process.poll() is None:
+                self.logger.info(self._process.stdout.readline(), extra={'raw': True})
+            self._process.stdout.close()
+        return_code = self._process.wait()
+
+        if return_code:
+            self.logger.error(subprocess.CalledProcessError(return_code, args))
+
+        return return_code
+
+    def display_text(self):
+        return self.node.name
 
 
 @unique
@@ -296,25 +344,38 @@ class ProcessingState(Enum):
     FAILED = 'Failed'
 
 
+class Handler(logging.StreamHandler):
+    def __init__(self, item, stream=None):
+        super(Handler, self).__init__(stream)
+        self.item = item
+
+    def emit(self, record):
+        if hasattr(record, 'raw') and record.raw:
+            self.stream.write(record.getMessage())
+        else:
+            super(Handler, self).emit(record)
+        self.item.log_updated.emit(self.stream.getvalue())
+
+
 class ProcessingItem(QtCore.QObject):
-    created = QtCore.Signal()
+    queued = QtCore.Signal()
     started = QtCore.Signal()
     finished = QtCore.Signal()
+
+    log_updated = QtCore.Signal(str)
 
     def __init__(self, node, runnable_cls, parent=None):
         super(ProcessingItem, self).__init__(parent)
         self.node = node
-        self.runnable = None
         self.runnable_cls = runnable_cls
+        self.runnable = None
         self.state = ProcessingState.OPEN
 
-        self.log_stream = StringIO()
         self.logger = logging.getLogger(str(hash(self)))
         self.logger.propagate = False
-        handler = logging.StreamHandler(self.log_stream)
-        formatter = logging.Formatter(fmt='{levelname: <8} :: {message}', style='{')
-        handler.setFormatter(formatter)
-        self.logger.addHandler(handler)
+        self.log_handler = Handler(self, StringIO())
+        self.log_handler.setFormatter(logging.Formatter(fmt='{levelname}: {message}', style='{'))
+        self.logger.addHandler(self.log_handler)
 
     def _started(self):
         self.state = ProcessingState.INPROGRESS
@@ -332,24 +393,32 @@ class ProcessingItem(QtCore.QObject):
         self.finished.emit()
 
     def _failed(self, exception):
-        self.state = ProcessingState.CANCELLED
+        self.state = ProcessingState.FAILED
         self.logger.critical(exception, exc_info=True)
         self.finished.emit()
 
     def start(self):
         self.state = ProcessingState.PENDING
         self.runnable = self.runnable_cls(self)
-        self.created.emit()
+        self.queued.emit()
 
     def restart(self):
         if self.state not in (ProcessingState.PENDING, ProcessingState.OPEN):
             if self.state == ProcessingState.INPROGRESS:
                 self.runnable.stop()
+            self.clear_log()
             self.start()
 
     def stop(self):
-        if self.state != ProcessingState.COMPLETED:
+        if self.state in (ProcessingState.OPEN, ProcessingState.PENDING, ProcessingState.INPROGRESS):
             self.runnable.stop()
 
+    def clear_log(self):
+        self.log_handler.setStream(StringIO())
+
+    @property
+    def log(self):
+        return self.log_handler.stream.getvalue()
+
     def display_text(self):
-        return self.runnable_cls.display_text(self.node)
+        return self.runnable.display_text()

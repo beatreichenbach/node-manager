@@ -6,7 +6,7 @@ import logging
 import glob
 import time
 import shutil
-
+import subprocess
 from enum import Enum
 
 from maya import cmds, mel
@@ -28,7 +28,7 @@ class Manager(maya.Manager):
         self.addAction('File', 'Set Directory', set_directory)
         self.addAction('File', 'Find and Replace', find_and_replace)
         self.addAction('File', 'Relocate', relocate)
-        self.addAction('File', 'Find Files', find_files)
+        self.addAction('File', 'Locate', locate)
         self.addAction('File', 'Open', open_file)
         self.addAction('File', 'Open Directory', open_directory)
         self.addAction('Parameters', 'Auto Color Space', auto_colorspace)
@@ -153,7 +153,7 @@ class Node(maya.Node):
     @property
     def file_size(self):
         if self._file_size is None:
-            self._file_size = utils.FileSize.from_file(self.filepath)
+            self._file_size = utils.FileSize.from_file(next(self.file_sequence))
 
         return self._file_size
 
@@ -188,24 +188,29 @@ class Node(maya.Node):
         is_file_sequence = any([tag in self.filename for tag in self._file_sequence_tags])
         return is_file_sequence
 
+    @property
+    def file_sequence(self):
+        if self.is_file_sequence:
+            regex = self.file_sequence_regex
+
+            for filename in os.listdir(self.directory):
+                if regex.search(filename):
+                    yield os.path.join(self.directory, filename)
+        else:
+            yield self.filepath
+
+    @property
+    def file_sequence_regex(self):
+        tags = '|'.join(self._file_sequence_tags)
+        file_pattern = re.sub(tags, r'\\d+', re.escape(self.filename))
+        return re.compile(file_pattern)
+
 
 def open_file(nodes):
     node = nodes[-1]
     filepath = node.filepath
     if node.is_file_sequence:
-        if not os.path.isdir(node.directory):
-            return
-
-        # todo: move into function
-        tags = '|'.join(node._file_sequence_tags)
-        file_pattern = re.sub(tags, r'\d+', re.escape(node.filename))
-        regex = re.compile(file_pattern)
-
-        for file in os.listdir(node.directory):
-            if regex.search(file):
-                filepath = os.path.join(node.directory, file)
-                break
-
+        filepath = next(node.file_sequence)
     if not os.path.isfile(filepath):
         return
 
@@ -264,69 +269,26 @@ def relocate(nodes):
     path = nodes[-1].directory
     values = util_dialog.RelocateDialog.get_values(path)
 
-    for node in nodes:
-        filepaths = []
+    if not values or not os.path.isdir(values['path']):
+        return
 
-        if node.is_file_sequence:
-            tags = '|'.join(node._file_sequence_tags)
-            file_pattern = re.sub(tags, r'\d+', re.escape(node.filename))
-            regex = re.compile(file_pattern)
+    runnable = RelocateRunnable
+    runnable.kwargs = values
 
-            for file in os.listdir(node.directory):
-                if regex.search(file):
-                    filepaths.append(os.path.join(node.directory, file))
-
-        else:
-            filepaths.append(node.filepath)
-
-        for filepath in filepaths:
-            if os.path.isfile(filepath):
-                if values['copy']:
-                    shutil.copy(node.filepath, path)
-                else:
-                    shutil.move(node.filepath, path)
-
-        if values['update']:
-            node.directory = path
+    processing.ProcessingDialog.process(nodes, runnable)
 
 
-def find_files(nodes):
+def locate(nodes):
     path = nodes[-1].directory
     values = util_dialog.FindFilesDialog.get_values(path)
 
     if not values or not os.path.isdir(values['path']):
         return
 
-    for node in nodes:
-        # todo: replace with actual status constant
-        if node.status or not node.filename:
-            continue
+    runnable = LocateRunnable
+    runnable.kwargs = values
 
-        file_pattern = re.escape(node.filename)
-
-        # todo: move into function
-        if node.is_file_sequence:
-            tags = '|'.join(node._file_sequence_tags)
-            file_pattern = re.sub(tags, r'\d+', re.escape(node.filename))
-
-        logging.debug(file_pattern)
-        file_sequence_regex = re.compile(file_pattern)
-
-        # todo: cache directories with success
-        for root, dirs, files in os.walk(values['path']):
-            for file in files:
-                filepath = os.path.join(root, file)
-                if file_sequence_regex.search(filepath):
-                    break
-            else:
-                continue
-
-            break
-        else:
-            continue
-
-        logging.debug(filepath)
-        node.filepath = filepath
+    processing.ProcessingDialog.process(nodes, runnable)
 
 
 def find_and_replace(nodes):
@@ -366,7 +328,7 @@ def auto_colorspace(nodes):
             node.colorSpace = 'linear'
 
 
-def generate_tx(nodes, parent):
+def generate_tx(nodes):
     runnable_cls = TXRunnable
 
     processing.ProcessingDialog.process(nodes, runnable_cls)
@@ -374,6 +336,136 @@ def generate_tx(nodes, parent):
 
 class TXRunnable(processing.ProcessingRunnable):
 
-    @staticmethod
-    def display_text(node):
-        return node.filepath
+    def process(self):
+        maketx_path = r'C:\Program Files\Autodesk\Arnold\maya2022\bin\maketx.exe'
+
+        output_dir = re.sub(r'[\\/]raw[\\/]', 'tiled', self.node.directory)
+
+        input_paths = []
+        if self.node.is_file_sequence:
+            input_paths.extend(self.node.file_sequence)
+        else:
+            input_paths.append(self.node.filepath)
+
+        input_paths = list(filter(os.path.isfile, input_paths))
+
+        if not input_paths:
+            raise FileNotFoundError
+
+        for input_path in input_paths:
+            if not self.running:
+                return
+
+            filename = os.path.basename(input_path)
+            name, ext = os.path.splitext(filename)
+            output_filename = '{}.tx'.format(name)
+            output_path = os.path.join(output_dir, output_filename)
+
+            input_path = os.path.abspath(input_path)
+            output_path = os.path.abspath(output_path)
+
+            # seems faster than maketx internal -u argument
+            if (os.path.isfile(input_path) and os.path.isfile(output_path) and
+                    os.path.getmtime(input_path) <= os.path.getmtime(output_path)):
+                continue
+
+            command_args = [
+                maketx_path,
+                '-v',
+                # '-u',
+                '--oiio',
+                '--checknan',
+                '--filter',  'lanczos3',
+                input_path,
+                '-o',  output_path
+                ]
+
+            self.logger.info(' '.join(command_args))
+
+            if self.popen(command_args):
+                return
+
+        return True
+
+    def display_text(self):
+        return self.node.filepath
+
+
+class LocateRunnable(processing.ProcessingRunnable):
+    cache = []
+
+    def process(self):
+        # todo: replace with actual status constant
+        if self.node.status or not self.node.filename:
+            return True
+
+        self.logger.info('Searching recursivly: {}'.format(self.kwargs['path']))
+
+        regex = self.node.file_sequence_regex
+        self.logger.info('Regex pattern: {}'.format(regex))
+
+        # lock contents of cache
+        cache = list(self.cache)
+        for root in cache:
+            for file in os.listdir(root):
+                if not self.running:
+                    return
+                filepath = os.path.join(root, file)
+                if regex.search(filepath):
+                    self.set_directory(root)
+                    return True
+
+        for root, dirs, files in os.walk(self.kwargs['path']):
+            if root in cache:
+                continue
+            for file in files:
+                if not self.running:
+                    return
+                filepath = os.path.join(root, file)
+                if regex.search(filepath):
+                    # still check since other instances could have added it
+                    if root not in self.cache:
+                        LocateRunnable.cache.append(root)
+                    self.set_directory(root)
+                    return True
+
+        raise FileNotFoundError
+
+    def set_directory(self, root):
+        self.logger.info('File found in: {}'.format(root))
+        self.node.directory = root
+
+    def display_text(self):
+        return self.node.filename
+
+
+class RelocateRunnable(processing.ProcessingRunnable):
+    def process(self):
+        for source_path in self.node.file_sequence:
+            if not self.running:
+                return
+            target_path = os.path.join(self.kwargs['path'], os.path.basename(source_path))
+            target_dir = os.path.dirname(target_path)
+            if not os.path.exists(target_dir):
+                self.logger.info('Directory created: {}'.format(target_dir))
+                os.makedirs(target_dir)
+
+            if os.path.isfile(source_path):
+                if (os.path.isfile(target_path) and
+                        os.path.getmtime(source_path) <= os.path.getmtime(target_path)):
+                    self.logger.info('Target file already exists: {}'.format(target_path))
+                    continue
+
+                if self.kwargs['copy']:
+                    self.logger.info('File copied: {}'.format(target_path))
+                    shutil.copy(source_path, target_dir)
+                else:
+                    self.logger.info('File moved: {}'.format(target_path))
+                    shutil.move(source_path, target_dir)
+
+        if self.kwargs['update']:
+            self.node.directory = target_dir
+        return True
+
+    def display_text(self):
+        return self.node.filepath
