@@ -18,13 +18,11 @@ except ImportError:
 
 
 class NodesView(QtWidgets.QTableView):
-    def __init__(self, parent):
+    def __init__(self, plugin, parent=None):
         super(NodesView, self).__init__(parent)
-
-        self.parent = parent
-        self.manager = parent.manager
-        self.menu = None
-
+        self.plugin = plugin
+        self.settings = utils.Settings()
+        self._header_state = None
         self.init_ui()
 
     @property
@@ -47,21 +45,27 @@ class NodesView(QtWidgets.QTableView):
         header = self.horizontalHeader()
         header.setContextMenuPolicy(QtCore.Qt.ActionsContextMenu)
 
+    def update_requested(self):
+        self._header_state = self.header_state
+
     def update(self):
-        self.update_header_actions()
+        logging.debug('update_nodes_view')
+        # self.update_header_actions()
         self.update_delegates()
+        self.header_state = self._header_state
 
     def update_header_actions(self):
         header = self.horizontalHeader()
         for action in header.actions():
             header.removeAction(action)
 
-        for i in range(self._model.columnCount()):
+        logging.debug('update_header_actions')
+        for i in range(header.count()):
             item = self._model.horizontalHeaderItem(i)
 
             action = QtWidgets.QAction(item.text(), self)
             action.setCheckable(True)
-            action.setChecked(not self.isColumnHidden(i))
+            action.setChecked(not header.isSectionHidden(i))
             action.triggered.connect(self.update_header)
             header.addAction(action)
 
@@ -80,12 +84,14 @@ class NodesView(QtWidgets.QTableView):
         for i, action in enumerate(header.actions()):
             state = action.isChecked()
             states.append(state)
-            self.setColumnHidden(i, not state)
+            if state and not header.sectionSize(i):
+                header.resizeSection(i, 100)
+            header.setSectionHidden(i, not state)
 
         # prevent all columns to be hidden
         if not any(states):
             header.actions()[0].setChecked(True)
-            self.setColumnHidden(0, False)
+            header.setSectionHidden(0, False)
 
     def contextMenuEvent(self, event):
         index = self.indexAt(event.pos())
@@ -105,9 +111,42 @@ class NodesView(QtWidgets.QTableView):
         # todo: add other required actions
         menu.popup(event.globalPos())
 
+    @property
+    def header_state(self):
+        header = self.horizontalHeader()
+        headers = {}
+        for i in range(header.count()):
+            attribute = self._model.horizontalHeaderItem(i).data()
+            visibility = not header.isSectionHidden(i)
+            width = header.sectionSize(i)
+            visual_index = header.visualIndex(i)
+            headers[attribute] = {
+                'width': width,
+                'visibility': visibility,
+                'visual_index': visual_index
+            }
+        return headers
+
+    @header_state.setter
+    def header_state(self, headers):
+        header = self.horizontalHeader()
+        for i in range(header.count()):
+            attribute = self._model.horizontalHeaderItem(i).data()
+            values = headers.get(attribute)
+            if values:
+                visibility = values.get('visibility', True)
+                width = values.get('width', 100)
+                if width == 0:
+                    visibility = False
+                header.setSectionHidden(i, not visibility)
+                header.resizeSection(i, width)
+                header.moveSection(header.visualIndex(i), values.get('visual_index', i))
+        self.update_header_actions()
+
 
 class NodesModel(QtGui.QStandardItemModel):
     # todo: add function to invalidate loaded items, in case of generate tx/find files etc.
+    update_requested = QtCore.Signal()
     updated = QtCore.Signal()
 
     def data(self, index, role=QtCore.Qt.DisplayRole):
@@ -130,8 +169,9 @@ class NodesModel(QtGui.QStandardItemModel):
         return True
 
     def set_nodes(self, nodes):
+        self.update_requested.emit()
         self.clear()
-
+        self.nodes = nodes
         for node in nodes:
             items = []
             for attribute in node.attributes:
@@ -152,6 +192,7 @@ class NodesModel(QtGui.QStandardItemModel):
         self.updated.emit()
 
     def set_headers(self, nodes):
+        logging.debug('set_headers')
         if nodes:
             node = nodes[0]
             self.attributes = node.attributes
@@ -166,6 +207,10 @@ class NodesModel(QtGui.QStandardItemModel):
         def wrapper():
             return getattr(node, attribute)
         return wrapper
+
+    def update(self):
+        if hasattr(self, 'nodes'):
+            self.set_nodes(self.nodes)
 
 
 class SortModel(QtCore.QSortFilterProxyModel):

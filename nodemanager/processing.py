@@ -4,6 +4,7 @@ import logging
 import glob
 import time
 import shutil
+import random
 import subprocess
 from functools import partial
 from enum import Enum, unique
@@ -85,6 +86,7 @@ class ProcessingDialog(QtWidgets.QDialog):
         super(ProcessingDialog, self).reject()
 
     def set_nodes(self, nodes):
+        processing_items = []
         for node in nodes:
             items = []
             processing_item = ProcessingItem(node, self.runnable_cls, self)
@@ -104,6 +106,11 @@ class ProcessingDialog(QtWidgets.QDialog):
             processing_item.queued.connect(partial(self.item_queued, item))
             processing_item.started.connect(partial(self.item_started, item))
             processing_item.finished.connect(partial(self.item_finished, item))
+
+            processing_items.append(processing_item)
+
+        random.shuffle(processing_items)
+        for processing_item in processing_items:
             processing_item.start()
 
     def item_queued(self, item):

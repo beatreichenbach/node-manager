@@ -185,6 +185,7 @@ class ManagerDialog(QtWidgets.QDialog):
         for node in sorted(plugin_utils.node_plugins(self.dcc, context)):
             widget = manager_widget.ManagerWidget(self, self.dcc, context, node)
             self.manager_tab.addTab(widget, node.title())
+            widget.message.connect(self.messaged)
         self.manager_widget = self.manager_tab.currentWidget()
 
         self.manager_tab.blockSignals(False)
@@ -195,6 +196,12 @@ class ManagerDialog(QtWidgets.QDialog):
             self.manager_widget.save_settings()
         self.manager_widget = self.manager_tab.currentWidget()
         self.manager_widget.load_settings()
+
+    def messaged(self, text, timeout=0):
+        if not text:
+            self.status_bar.clearMessage()
+        else:
+            self.status_bar.showMessage(text, timeout)
 
 
 if __name__ == '__main__':

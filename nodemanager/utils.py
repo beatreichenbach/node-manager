@@ -118,7 +118,8 @@ class Settings(QtCore.QSettings):
                 return bool(value)
 
     def list(self, key):
-        value = self.value(key, [])
+        # default not always working
+        value = self.value(key, []) or []
         # py2.7
         try:
             if isinstance(value, basestring):

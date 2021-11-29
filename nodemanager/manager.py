@@ -51,19 +51,21 @@ class Manager(object):
     def load_plugin(self):
         pass
 
-    def addAction(self, group, text, func):
-        action = QtWidgets.QAction(text)
-        action.triggered.connect(lambda: self.runAction(func))
-        actions = self.actions.get(group, set())
-        actions.add(action)
+    def addAction(self, group, label, func, update_model=True):
+        action = QtWidgets.QAction(label)
+        action.triggered.connect(lambda: self.runAction(func, update_model))
+        actions = self.actions.get(group, [])
+        if action not in actions:
+            actions.append(action)
         self.actions[group] = actions
 
-    def runAction(self, func):
-        # todo: update model from node changes
+    def runAction(self, func, update_model):
         nodes = [node for node in self.selected_nodes() if node.exists]
         if not nodes:
             return
         func(nodes)
+        if update_model:
+            self.model.update()
 
     def addFilter(self, attribute):
         if attribute not in self.filters:
@@ -79,7 +81,6 @@ class Manager(object):
                 'Unable to load plugin: {}'.format(self.plugin_name),
                 QtWidgets.QMessageBox.Ok)
             return
-
         self.model.set_nodes(self.nodes())
 
     def nodes(self):

@@ -25,12 +25,13 @@ class Manager(maya.Manager):
     def __init__(self, *args):
         super(Manager, self).__init__(*args)
 
+        # addAction(group, label, func, update_model=True)
         self.addAction('File', 'Set Directory', set_directory)
         self.addAction('File', 'Find and Replace', find_and_replace)
         self.addAction('File', 'Relocate', relocate)
         self.addAction('File', 'Locate', locate)
-        self.addAction('File', 'Open', open_file)
-        self.addAction('File', 'Open Directory', open_directory)
+        self.addAction('File', 'Open', open_file, False)
+        self.addAction('File', 'Open Directory', open_directory, False)
         self.addAction('Parameters', 'Auto Color Space', auto_colorspace)
         self.addAction('Parameters', 'Auto Filter', auto_filter)
         self.addAction('Tiled', 'Generate TX', generate_tx)
@@ -38,8 +39,8 @@ class Manager(maya.Manager):
         self.addAction('Tiled', 'Switch to TX', None)
         self.addAction('Node', 'Convert', None)
         self.addAction('Node', 'Remove', remove)
-        self.addAction('Node', 'Graph Nodes', graph_nodes)
-        self.addAction('Node', 'Select Dependent Objects', select_dependents)
+        self.addAction('Node', 'Graph Nodes', graph_nodes, False)
+        self.addAction('Node', 'Select Dependent Objects', select_dependents, False)
 
         self.addFilter('name')
         self.addFilter('status')
@@ -138,22 +139,19 @@ class Node(maya.Node):
 
     @property
     def status(self):
-        return os.path.isfile(self.filepath)
-        '''
-        NO_PATH (really that's just missing file...)
-        MISSING_FILE
-        OK
-        '''
-        return 1.01
+        filepath = next(self.file_sequence, '')
 
-    @status.setter
-    def status(self, value):
-        pass
+        if not filepath:
+            return FileStatus.NOT_SET
+        elif os.path.isfile(filepath):
+            return FileStatus.EXISTS
+        else:
+            return FileStatus.NOT_FOUND
 
     @property
     def file_size(self):
         if self._file_size is None:
-            self._file_size = utils.FileSize.from_file(next(self.file_sequence))
+            self._file_size = utils.FileSize.from_file(next(self.file_sequence, ''))
 
         return self._file_size
 
@@ -207,7 +205,7 @@ class Node(maya.Node):
 
 
 def open_file(nodes):
-    node = nodes[-1]
+    node = nodes[0]
     filepath = node.filepath
     if node.is_file_sequence:
         filepath = next(node.file_sequence)
@@ -219,11 +217,11 @@ def open_file(nodes):
 
 def open_directory(nodes):
     if nodes:
-        os.startfile(nodes[-1].directory)
+        os.startfile(nodes[0].directory)
 
 
 def set_directory(nodes):
-    path = nodes[-1].directory
+    path = nodes[0].directory
     values = util_dialog.SetDirectoryDialog.get_values(path)
 
     if not values:
@@ -266,7 +264,7 @@ def remove(nodes):
 
 def relocate(nodes):
     # todo: add parent
-    path = nodes[-1].directory
+    path = nodes[0].directory
     values = util_dialog.RelocateDialog.get_values(path)
 
     if not values or not os.path.isdir(values['path']):
@@ -279,7 +277,7 @@ def relocate(nodes):
 
 
 def locate(nodes):
-    path = nodes[-1].directory
+    path = nodes[0].directory
     values = util_dialog.FindFilesDialog.get_values(path)
 
     if not values or not os.path.isdir(values['path']):
@@ -292,7 +290,7 @@ def locate(nodes):
 
 
 def find_and_replace(nodes):
-    path = nodes[-1].directory
+    path = nodes[0].directory
     values = util_dialog.FindAndReplaceDialog.get_values(path)
 
     if not values:
@@ -330,7 +328,6 @@ def auto_colorspace(nodes):
 
 def generate_tx(nodes):
     runnable_cls = TXRunnable
-
     processing.ProcessingDialog.process(nodes, runnable_cls)
 
 
@@ -384,6 +381,9 @@ class TXRunnable(processing.ProcessingRunnable):
 
             if self.popen(command_args):
                 return
+        self.node.directory = output_dir
+        name, ext = os.path.splitext(self.node.filename)
+        self.node.filename = '{}.tx'.format(name)
 
         return True
 
@@ -469,3 +469,9 @@ class RelocateRunnable(processing.ProcessingRunnable):
 
     def display_text(self):
         return self.node.filepath
+
+
+class FileStatus(Enum):
+    EXISTS = 1
+    NOT_FOUND = 2
+    NOT_SET = 3

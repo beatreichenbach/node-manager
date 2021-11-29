@@ -31,8 +31,9 @@ class FindAndReplaceDialog(QtWidgets.QDialog):
         return values
 
     @classmethod
-    def get_values(cls):
+    def get_values(cls, path=''):
         dialog = cls()
+        dialog.path = path
         result = dialog.exec_()
         if result == QtWidgets.QDialog.Accepted:
             return dialog.values()

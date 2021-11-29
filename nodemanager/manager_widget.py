@@ -20,6 +20,8 @@ except ImportError:
 
 
 class ManagerWidget(QtWidgets.QWidget):
+    message = QtCore.Signal(str)
+
     # todo: when actions are taller than table, bottom scroll disappears
     def __init__(self, parent=None, dcc='', context='', node=''):
         super(ManagerWidget, self).__init__(parent)
@@ -35,9 +37,8 @@ class ManagerWidget(QtWidgets.QWidget):
 
         self.init_ui()
 
-        # no likey
+        # is this good?
         self.manager.table_view = self.nodes_view
-        self.manager.widget = self
 
         self.action_widget.update_actions()
 
@@ -46,14 +47,14 @@ class ManagerWidget(QtWidgets.QWidget):
 
         # for testing purposes only
         # todo: add setting for autoload
-        self.load()
+        # self.load()
 
     def init_ui(self):
         gui_utils.load_ui(self, 'manager_widget.ui')
 
         # table view
-        self.nodes_view = nodes_table.NodesView(self)
-        self.sort_model = nodes_table.SortModel(self)
+        self.nodes_view = nodes_table.NodesView(self.plugin, parent=self)
+        self.sort_model = nodes_table.SortModel(parent=self)
         self.sort_model.setSortCaseSensitivity(QtCore.Qt.CaseInsensitive)
         self.sort_model.setSourceModel(self.manager.model)
         self.nodes_view.setModel(self.sort_model)
@@ -69,6 +70,7 @@ class ManagerWidget(QtWidgets.QWidget):
         display_scroll = QtWidgets.QScrollArea()
         self.display_widget = DisplayWidget(self.nodes_view)
         display_scroll.setWidget(self.display_widget)
+        display_scroll.setWidgetResizable(True)
 
         # nodes widget
         nodes_frame = QtWidgets.QFrame()
@@ -89,6 +91,7 @@ class ManagerWidget(QtWidgets.QWidget):
 
     def connect_ui(self):
         self.load_btn.clicked.connect(self.load)
+        self.manager.model.update_requested.connect(self.nodes_view.update_requested)
         self.manager.model.updated.connect(self.nodes_view.update)
         self.manager.model.updated.connect(self.display_widget.update)
         self.display_widget.filter_changed.connect(self.sort_model.update_filters)
@@ -101,12 +104,20 @@ class ManagerWidget(QtWidgets.QWidget):
         self.settings.setValue('manager_widget/splitter', self.splitter.sizes())
 
         self.settings.beginGroup(self.plugin)
-        header = self.nodes_view.horizontalHeader()
-        if header.count():
-            self.settings.setValue('header_state', header.saveState())
 
-        if header.count():
-            self.settings.setValue('header_count', header.count())
+        headers = self.nodes_view.header_state
+        if headers:
+            attributes = []
+            widths = []
+            visibilities = []
+            for attribute, values in sorted(headers.items(), key=lambda i: i[1]['visual_index']):
+                attributes.append(attribute)
+                widths.append(values['width'])
+                visibilities.append(values['visibility'])
+            self.settings.setValue('header_attributes', attributes)
+            self.settings.setValue('header_widths', widths)
+            self.settings.setValue('header_visibilities', visibilities)
+
         self.settings.endGroup()
 
     def load_settings(self):
@@ -116,20 +127,44 @@ class ManagerWidget(QtWidgets.QWidget):
             self.splitter.setSizes(value)
 
         self.settings.beginGroup(self.plugin)
-        value = self.settings.value('header_state')
-        if value:
-            header = self.nodes_view.horizontalHeader()
-            header_count = self.settings.value('header_count')
-            if int(header_count) == header.count():
-                header.restoreState(value)
-                self.nodes_view.update_header_actions()
+
+        attributes = self.settings.list('header_attributes')
+        widths = self.settings.list('header_widths')
+        visibilities = self.settings.list('header_visibilities')
+
+        headers = {}
+        for i, attribute in enumerate(attributes):
+            headers[attribute] = {
+                'width': widths[i],
+                'visibility': visibilities[i],
+                'visual_index': i
+            }
+
+        self.nodes_view.header_state = headers
         self.settings.endGroup()
+
+    def _load(self):
+        # self.save_settings()
+        self.manager.load()
+        # self.load_settings()
+        self.message.emit('')
 
     def load(self):
         logging.debug('load')
-        self.save_settings()
-        self.manager.load()
-        self.load_settings()
+        self.message.emit('Loading nodes...')
+        threadpool = QtCore.QThreadPool(self)
+        # runnable = Runnable(self._load)
+        # threadpool.start(runnable)
+        self._load()
+
+
+class Runnable(QtCore.QRunnable):
+    def __init__(self, func):
+        super(Runnable, self).__init__()
+        self.func = func
+
+    def run(self):
+        self.func()
 
 
 class ActionWidget(QtWidgets.QWidget):
