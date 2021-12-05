@@ -67,7 +67,7 @@ class RelocateDialog(QtWidgets.QDialog):
         values = {}
         values['path'] = self.path_line.text()
         values['copy'] = self.copy_radio.isChecked()
-        values['update'] = self.update_chk.isChecked()
+        values['ignore_update'] = self.ignore_update_chk.isChecked()
         values['parent'] = self.parent_chk.isChecked()
         return values
 

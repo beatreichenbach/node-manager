@@ -101,6 +101,7 @@ class ManagerWidget(QtWidgets.QWidget):
         event.accept()
 
     def save_settings(self):
+        logging.debug('save_settings_widget')
         self.settings.setValue('manager_widget/splitter', self.splitter.sizes())
 
         self.settings.beginGroup(self.plugin)
@@ -121,6 +122,7 @@ class ManagerWidget(QtWidgets.QWidget):
         self.settings.endGroup()
 
     def load_settings(self):
+        logging.debug('load_settings_widget')
         value = self.settings.list('manager_widget/splitter')
         # setting splitter size when identical seems to cause it to reset
         if value and self.splitter.sizes() != value:

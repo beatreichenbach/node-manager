@@ -17,18 +17,17 @@ except ImportError:
     import manager
 
 
-class NodesView(QtWidgets.QTableView):
-    def __init__(self, plugin, parent=None):
-        super(NodesView, self).__init__(parent)
-        self.plugin = plugin
-        self.settings = utils.Settings()
-        self._header_state = {}
+class AttributeTableView(QtWidgets.QTableView):
+    def __init__(self, parent=None):
+        super(AttributeTableView, self).__init__(parent)
+
+        # self._header_state = {}
         self.init_ui()
 
     @property
     def _model(self):
-        model = super(NodesView, self).model()
-        if model and isinstance(model, QtCore.QSortFilterProxyModel):
+        model = super(AttributeTableView, self).model()
+        if model and isinstance(model, QtCore.QAbstractProxyModel):
             model = model.sourceModel()
         return model
 
@@ -138,7 +137,7 @@ class NodesView(QtWidgets.QTableView):
             # cache state
             self._header_state = headers
         else:
-            # set state from cache
+            # set s tate from cache
             headers = self._header_state
 
         logging.debug(['set_header', headers])
@@ -157,57 +156,80 @@ class NodesView(QtWidgets.QTableView):
         self.update_header_actions()
 
 
-class NodesModel(QtGui.QStandardItemModel):
-    # todo: add function to invalidate loaded items, in case of generate tx/find files etc.
-    update_requested = QtCore.Signal()
+class AttributeItemModel(QtGui.QStandardItemModel):
     updated = QtCore.Signal()
 
     def data(self, index, role=QtCore.Qt.DisplayRole):
         # override to enable deferred loading of items
-        data = super(NodesModel, self).data(index, role)
-        if role in (QtCore.Qt.DisplayRole, QtCore.Qt.EditRole) and callable(data):
-            data = data()
-            super(NodesModel, self).setData(index, data, role)
+        data = super(AttributeItemModel, self).data(index, role)
+        if data is None and role in (QtCore.Qt.DisplayRole, QtCore.Qt.EditRole):
+            attribute_item = self.attribute_item_from_index(index)
+            attribute = self.attribute_from_index(index)
+            data = getattr(attribute_item, attribute)
+            super(AttributeItemModel, self).setData(index, data, role)
         return data
 
     def setData(self, index, value, role):
-        super(NodesModel, self).setData(index, value, role)
+        result = super(AttributeItemModel, self).setData(index, value, role)
 
         if role == QtCore.Qt.EditRole:
-            node = self.itemFromIndex(index).data()
-            item = self.horizontalHeaderItem(index.column())
-            attribute = item.data()
-            setattr(node, attribute, value)
+            attribute_item = self.attribute_item_from_index(index)
+            attribute = self.attribute_from_index(index)
+            try:
+                setattr(attribute_item, attribute, value)
+            except AttributeError:
+                return False
 
-        return True
+        return True and result
 
-    def set_nodes(self, nodes):
-        self.update_requested.emit()
+    def attribute_item_from_index(self, index):
+        return self.item(index.row(), 0).data()
+
+    def attribute_from_index(self, index):
+        return self.horizontalHeaderItem(index.column()).data()
+
+    def set_items(self, attribute_items):
         self.clear()
-        self.nodes = nodes
-        for node in nodes:
+        for attribute_item in attribute_items:
             items = []
-            for attribute in node.attributes:
+            for i, attribute in attribute_item.attributes:
                 item = QtGui.QStandardItem()
-                value = self.deferred_loading(node, attribute)
 
-                if attribute in node.locked_attributes:
+                if attribute in attribute_item.locked_attributes:
                     item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
 
-                item.setData(value, QtCore.Qt.DisplayRole)
-                item.setData(node)
+                if i == 0:
+                    item.setData(attribute_item)
 
-                items.append(item)
+            if items:
+                items[0].append(attribute_item)
+                self.appendRow(items)
 
-            self.appendRow(items)
-
-        self.set_headers(nodes)
+        self.set_headers(attribute_items)
         self.updated.emit()
 
-    def set_headers(self, nodes):
+    def update(self):
+        for row in range(self.rowCount()):
+            self.update_index(self.index(row, 0))
+
+    def update_items(self, attribute_items):
+        for row in range(self.rowCount()):
+            attribute_item = self.item(row, 0).data()
+            if attribute_item in attribute_items:
+                self.update_index(self.index(row, 0))
+                attribute_items.remove(attribute_item)
+                if not attribute_items:
+                    break
+
+    def update_index(self, index):
+        for column in range(self.columnCount()):
+            item = self.item(index.row(), column)
+            item.setData(None, QtCore.Qt.DisplayRole)
+
+    def set_headers(self, attribute_items):
         logging.debug('set_headers')
-        if nodes:
-            node = nodes[0]
+        if attribute_items:
+            node = attribute_items[0]
             self.attributes = node.attributes
             for i, attribute in enumerate(self.attributes):
                 item = QtGui.QStandardItem()
@@ -215,18 +237,8 @@ class NodesModel(QtGui.QStandardItemModel):
                 item.setData(attribute)
                 self.setHorizontalHeaderItem(i, item)
 
-    @staticmethod
-    def deferred_loading(node, attribute):
-        def wrapper():
-            return getattr(node, attribute)
-        return wrapper
 
-    def update(self):
-        if hasattr(self, 'nodes'):
-            self.set_nodes(self.nodes)
-
-
-class SortModel(QtCore.QSortFilterProxyModel):
+class AttributeSortModel(QtCore.QSortFilterProxyModel):
     filters = {}
 
     def value(self, value):
@@ -333,7 +345,7 @@ class BoolDelegate(Delegate):
 
     def createEditor(self, parent, option, index):
         editor = QtWidgets.QComboBox(parent)
-        editor.setFocusPolicy(QtCore.Qt.StrongFocus)
+        # editor.setFocusPolicy(QtCore.Qt.StrongFocus)
         editor.addItems(('Disabled', 'Enabled'))
         editor.currentIndexChanged.connect(lambda: self.commitData.emit(editor))
         editor.currentIndexChanged.connect(lambda: self.closeEditor.emit(editor, self.NoHint))
@@ -358,7 +370,7 @@ class EnumDelegate(Delegate):
 
     def createEditor(self, parent, option, index):
         editor = QtWidgets.QComboBox(parent)
-        editor.setFocusPolicy(QtCore.Qt.StrongFocus)
+        # editor.setFocusPolicy(QtCore.Qt.StrongFocus)
         for member in self.enum:
             editor.addItem(member.name, member.value)
         editor.currentIndexChanged.connect(lambda: self.commitData.emit(editor))
@@ -383,6 +395,7 @@ class ColorDelegate(Delegate):
     def createEditor(self, parent, option, index):
         editor = QtWidgets.QWidget(parent)
         editor.dialog = QtWidgets.QColorDialog(editor)
+        editor.color = None
         editor.dialog.colorSelected.connect(lambda color: setattr(editor, 'color', color))
         editor.dialog.colorSelected.connect(lambda: self.commitData.emit(editor))
         editor.dialog.colorSelected.connect(lambda: self.closeEditor.emit(editor, self.NoHint))
@@ -395,13 +408,12 @@ class ColorDelegate(Delegate):
 
     def setModelData(self, editor, model, index):
         value = editor.color
-        if value.isValid():
+        if value and value.isValid():
             super(ColorDelegate, self).setModelData(editor, model, index, value)
 
     def paint(self, painter, option, index):
         value = index.model().data(index, QtCore.Qt.EditRole)
-        if not value:
-            return
-        option.rect.adjust(5, 5, -5, -5)
-        painter.setBrush(value)
-        painter.drawRect(option.rect)
+        if value:
+            option.rect.adjust(5, 5, -5, -5)
+            painter.setBrush(value)
+            painter.drawRect(option.rect)

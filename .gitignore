@@ -142,6 +142,7 @@ cython_debug/
 *.sublime-workspace
 
 # Project files
+maps/
 repath/
 resource/
 *.ini

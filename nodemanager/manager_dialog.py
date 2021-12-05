@@ -118,6 +118,8 @@ class ManagerDialog(QtWidgets.QDialog):
         value = self.settings.value('manager_dialog/context')
         if value:
             self.context_cmb.setCurrentText(value)
+        else:
+            self.context_cmb.setCurrentIndex(0)
 
         value = self.settings.value('manager_dialog/tab')
         if value:

@@ -34,10 +34,10 @@ class Manager(maya.Manager):
         self.addAction('File', 'Open Directory', open_directory, False)
         self.addAction('Parameters', 'Auto Color Space', auto_colorspace)
         self.addAction('Parameters', 'Auto Filter', auto_filter)
-        self.addAction('Tiled', 'Generate TX', generate_tx)
-        self.addAction('Tiled', 'Switch to Raw', None)
-        self.addAction('Tiled', 'Switch to TX', None)
-        self.addAction('Node', 'Convert', None)
+        self.addAction('Tiled', 'Generate Tiled', generate_tiled)
+        self.addAction('Tiled', 'Switch to Raw', switch_raw)
+        self.addAction('Tiled', 'Switch to Tiled', switch_tiled)
+        self.addAction('Node', 'Convert', convert)
         self.addAction('Node', 'Remove', remove)
         self.addAction('Node', 'Graph Nodes', graph_nodes, False)
         self.addAction('Node', 'Select Dependent Objects', select_dependents, False)
@@ -326,12 +326,76 @@ def auto_colorspace(nodes):
             node.colorSpace = 'linear'
 
 
-def generate_tx(nodes):
-    runnable_cls = TXRunnable
+def generate_tiled(nodes):
+    runnable_cls = TiledRunnable
     processing.ProcessingDialog.process(nodes, runnable_cls)
 
 
-class TXRunnable(processing.ProcessingRunnable):
+def convert(nodes):
+    classes = ['file']
+    item, result = QtWidgets.QInputDialog.getItem(
+        None,
+        'Convert',
+        'Convert nodes to:',
+        classes,
+        editable=False)
+
+    if result:
+        for node in nodes:
+            convert_node(node, item)
+
+
+def convert_node(node, cls):
+    aiimage_file = {
+        'path': 'filename'
+    }
+    if cls == 'file':
+        logging.debug('file')
+
+
+def switch_raw(nodes):
+    extensions = ['jpg', 'png', 'tif', 'tiff', 'exr']
+    for node in nodes:
+        filepath = next(node.file_sequence, '')
+
+        if not filepath:
+            continue
+
+        base, ext = os.path.splitext(os.path.basename(filepath))
+        raw_dir = re.sub(r'[\\/]tiled[\\/]', 'raw', node.directory)
+
+        for extension in extensions:
+            for filename in os.listdir(raw_dir):
+                if filename == '{}.{}'.format(base, extension):
+                    break
+            else:
+                continue
+
+            base, ext = os.path.splitext(node.filename)
+            raw_filename = '{}.{}'.format(base, extension)
+            node.filename = raw_filename
+            node.directory = raw_dir
+            break
+
+
+def switch_tiled(nodes):
+    for node in nodes:
+        filepath = next(node.file_sequence, '')
+
+        if not filepath:
+            continue
+
+        base, ext = os.path.splitext(os.path.basename(filepath))
+        tiled_dir = re.sub(r'[\\/]raw[\\/]', 'tiled', node.directory)
+        tiled_filepath = os.path.join(tiled_dir, '{}.tx'.format(base))
+        if os.path.isfile(tiled_filepath):
+            base, ext = os.path.splitext(node.filename)
+            tiled_filename = '{}.tx'.format(base)
+            node.filename = tiled_filename
+            node.directory = tiled_dir
+
+
+class TiledRunnable(processing.ProcessingRunnable):
 
     def process(self):
         maketx_path = r'C:\Program Files\Autodesk\Arnold\maya2022\bin\maketx.exe'
@@ -463,7 +527,7 @@ class RelocateRunnable(processing.ProcessingRunnable):
                     self.logger.info('File moved: {}'.format(target_path))
                     shutil.move(source_path, target_dir)
 
-        if self.kwargs['update']:
+        if not self.kwargs['ignore_update']:
             self.node.directory = target_dir
         return True
 

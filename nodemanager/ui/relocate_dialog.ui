@@ -52,12 +52,9 @@
       </layout>
      </item>
      <item row="2" column="1">
-      <widget class="QCheckBox" name="update_chk">
+      <widget class="QCheckBox" name="ignore_update_chk">
        <property name="text">
-        <string>Update path attribute in nodes</string>
-       </property>
-       <property name="checked">
-        <bool>true</bool>
+        <string>Don't update nodes</string>
        </property>
       </widget>
      </item>
