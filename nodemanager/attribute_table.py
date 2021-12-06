@@ -19,7 +19,7 @@ class AttributeTableView(QtWidgets.QTableView):
     def __init__(self, parent=None):
         super(AttributeTableView, self).__init__(parent)
 
-        # self._header_state = {}
+        self._header_state = {}
         self.init_ui()
 
     @property
