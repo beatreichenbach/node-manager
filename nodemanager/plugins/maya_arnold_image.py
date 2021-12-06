@@ -495,6 +495,11 @@ class TiledRunnable(processing.ProcessingRunnable):
 class LocateRunnable(processing.ProcessingRunnable):
     cache = []
 
+    def __init__(self, item):
+        super(TiledRunnable, self).__init__(item)
+
+        self.node = ProcessingNode(self.node)
+
     def process(self):
         if not self.node.filename:
             return True
@@ -540,6 +545,11 @@ class LocateRunnable(processing.ProcessingRunnable):
 
 
 class RelocateRunnable(processing.ProcessingRunnable):
+    def __init__(self, item):
+        super(TiledRunnable, self).__init__(item)
+
+        self.node = ProcessingNode(self.node)
+
     def process(self):
         target_dir = self.node.directory
         for source_path in self.node.file_sequence:
