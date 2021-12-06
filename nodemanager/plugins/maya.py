@@ -2,15 +2,24 @@ from __future__ import absolute_import
 import sys
 import logging
 import os
-from enum import Enum
+
+try:
+    from enum import Enum
+except ImportError:
+    # py 2.7
+    from ..enum import Enum
 
 from PySide2 import QtWidgets, QtGui
+
 from maya import mel, cmds
 
 from nodemanager import manager_dialog
 from .. import manager
 from .. import setup
-from .. import utils
+
+# py 2.7
+if sys.version_info[0] >= 3:
+    unicode = str
 
 
 def run():
@@ -23,12 +32,11 @@ def run():
 
 class Manager(manager.Manager):
     plugin_name = 'mtoa.mll'
-    settings_group = 'maya'
 
     def load_plugin(self):
         if not self.plugin_name:
             raise RuntimeError
-        if not (cmds.pluginInfo(self.plugin_name, query=True, loaded=True)):
+        if not cmds.pluginInfo(self.plugin_name, query=True, loaded=True):
             cmds.loadPlugin(self.plugin_name)
 
 
@@ -70,7 +78,8 @@ class Node(manager.Node):
     def set_node_attr(self, name, value):
         attr = self.attr(name)
         try:
-            if isinstance(value, str):
+            # py 2.7
+            if isinstance(value, str) or isinstance(value, unicode):
                 value = value.replace('\\', '/')
                 cmds.setAttr(attr, value, type='string')
             elif isinstance(value, Enum):

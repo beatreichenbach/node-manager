@@ -3,10 +3,7 @@ import sys
 import os
 from PySide2 import QtWidgets, QtCore, QtGui
 
-try:
-    from . import gui_utils
-except ImportError:
-    import gui_utils
+from . import gui_utils
 
 
 class FindAndReplaceDialog(QtWidgets.QDialog):

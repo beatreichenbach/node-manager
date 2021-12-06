@@ -1,7 +1,6 @@
 import os
 import sys
 from PySide2 import QtUiTools, QtWidgets, QtCore
-import logging
 
 
 def load_ui(parent, file_name):

@@ -1,44 +1,41 @@
-import os
-import re
-import glob
 import logging
-import shutil
-from enum import Enum
+import sys
+from functools import partial
+import traceback
+try:
+    from enum import Enum
+except ImportError:
+    from ..enum import Enum
 
 from PySide2 import QtWidgets, QtCore, QtGui
 
-try:
-    from . import gui_utils
-    from . import utils
-    from . import manager
-    from . import nodes_table
-except ImportError:
-    import gui_utils
-    import utils
-    import manager
-    import nodes_table
+from . import gui_utils
+from . import utils
+from . import manager
+from . import attribute_table
+
+
+# py 2.7
+if sys.version_info[0] >= 3:
+    unicode = str
 
 
 class ManagerWidget(QtWidgets.QWidget):
     message = QtCore.Signal(str)
 
     # todo: when actions are taller than table, bottom scroll disappears
-    def __init__(self, parent=None, dcc='', context='', node=''):
+    def __init__(self, parent=None, dcc='', context='', node_cls=''):
         super(ManagerWidget, self).__init__(parent)
 
-        self.setObjectName('ManagerWidget')
         self.settings = utils.Settings()
         self.dcc = dcc
         self.context = context
-        self.node = node
+        self.node_cls = node_cls
 
-        self.plugin = '_'.join((self.dcc, self.context, self.node))
+        self.plugin = '_'.join((self.dcc, self.context, self.node_cls))
         self.manager = manager.Manager.from_plugin(self.plugin)
 
         self.init_ui()
-
-        # is this good?
-        self.manager.table_view = self.nodes_view
 
         self.action_widget.update_actions()
 
@@ -47,28 +44,30 @@ class ManagerWidget(QtWidgets.QWidget):
 
         # for testing purposes only
         # todo: add setting for autoload
-        # self.load()
+        self.load()
 
     def init_ui(self):
         gui_utils.load_ui(self, 'manager_widget.ui')
 
         # table view
-        self.nodes_view = nodes_table.NodesView(self.plugin, parent=self)
-        self.sort_model = nodes_table.SortModel(parent=self)
+        self.model = attribute_table.AttributeItemModel(parent=self)
+        self.sort_model = attribute_table.AttributeSortModel(parent=self)
+        self.sort_model.setSourceModel(self.model)
         self.sort_model.setSortCaseSensitivity(QtCore.Qt.CaseInsensitive)
-        self.sort_model.setSourceModel(self.manager.model)
-        self.nodes_view.setModel(self.sort_model)
+        self.attribute_view = attribute_table.AttributeTableView(parent=self)
+        self.attribute_view.setModel(self.sort_model)
+        self.setStyleSheet('QTableView::item {border: 0px; padding: 0px 10px;}')
 
         # action widget
         self.action_scroll = VerticalScrollArea()
-        self.action_widget = ActionWidget(self.manager)
+        self.action_widget = ActionWidget(self, self.manager, self.attribute_view)
         self.action_scroll.setWidget(self.action_widget)
         self.action_scroll.setMinimumSize(self.action_scroll.sizeHint())
         self.action_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
 
         # display widget
         display_scroll = QtWidgets.QScrollArea()
-        self.display_widget = DisplayWidget(self.nodes_view)
+        self.display_widget = DisplayWidget(self.attribute_view)
         display_scroll.setWidget(self.display_widget)
         display_scroll.setWidgetResizable(True)
 
@@ -77,7 +76,7 @@ class ManagerWidget(QtWidgets.QWidget):
         nodes_frame.setFrameShape(display_scroll.frameShape())
         nodes_frame.setFrameStyle(display_scroll.frameStyle())
         nodes_frame.setLayout(QtWidgets.QHBoxLayout())
-        nodes_frame.layout().addWidget(self.nodes_view)
+        nodes_frame.layout().addWidget(self.attribute_view)
         nodes_frame.layout().addWidget(self.action_scroll)
         nodes_frame.layout().setStretch(0, 1)
 
@@ -86,14 +85,31 @@ class ManagerWidget(QtWidgets.QWidget):
         self.splitter.addWidget(display_scroll)
         self.splitter.addWidget(nodes_frame)
         self.layout().replaceWidget(self.nodes_widget, self.splitter)
+        self.nodes_widget.setParent(None)
 
-        self.setStyleSheet('QTableView::item {border: 0px; padding: 0px 10px;}')
+        # progress and status bar
+        self.main_prgbar.setVisible(False)
+        size_policy = self.main_prgbar.sizePolicy()
+        # size_policy.setRetainSizeWhenHidden(True)
+        self.main_prgbar.setSizePolicy(size_policy)
+
+        self.status_bar = QtWidgets.QStatusBar()
+        palette = self.status_bar.palette()
+        palette.setColor(palette.Window, palette.color(palette.AlternateBase))
+        palette.setColor(palette.WindowText, palette.color(palette.HighlightedText))
+        self.status_bar.setPalette(palette)
+        self.status_bar.setAutoFillBackground(True)
+
+        self.status_bar.setSizeGripEnabled(False)
+        self.footer_lay.insertWidget(0, self.status_bar)
+        self.footer_lay.setStretch(0, 1)
+        self.footer_lay.setStretch(1, 0)
 
     def connect_ui(self):
         self.load_btn.clicked.connect(self.load)
-        self.manager.model.update_requested.connect(self.nodes_view.update_requested)
-        self.manager.model.updated.connect(self.nodes_view.update)
-        self.manager.model.updated.connect(self.display_widget.update)
+        # self.model.update_requested.connect(self.attribute_view.update_requested)
+        self.model.updated.connect(self.attribute_view.update)
+        self.model.updated.connect(self.display_widget.update)
         self.display_widget.filter_changed.connect(self.sort_model.update_filters)
 
     def closeEvent(self, event):
@@ -106,7 +122,7 @@ class ManagerWidget(QtWidgets.QWidget):
 
         self.settings.beginGroup(self.plugin)
 
-        headers = self.nodes_view.header_state
+        headers = self.attribute_view.header_state
         if headers:
             attributes = []
             widths = []
@@ -142,37 +158,50 @@ class ManagerWidget(QtWidgets.QWidget):
                 'visual_index': i
             }
 
-        self.nodes_view.header_state = headers
+        self.attribute_view.header_state = headers
         self.settings.endGroup()
-
-    def _load(self):
-        # self.save_settings()
-        self.manager.load()
-        # self.load_settings()
-        self.message.emit('')
 
     def load(self):
         logging.debug('load')
-        self.message.emit('Loading nodes...')
-        threadpool = QtCore.QThreadPool(self)
+        self.status_bar.showMessage('Loading nodes...')
+        # threadpool = QtCore.QThreadPool(self)
         # runnable = Runnable(self._load)
         # threadpool.start(runnable)
-        self._load()
+
+        # self.save_settings()
+
+        try:
+            attribute_items = self.manager.nodes()
+            self.model.set_items(attribute_items)
+        except RuntimeError as exception:
+            message_box = QtWidgets.QMessageBox(
+                QtWidgets.QMessageBox.Warning,
+                'RuntimeError',
+                'RuntimeError: {}'.format(exception),
+                QtWidgets.QMessageBox.Ok,
+                self)
+            message_box.setDetailedText(traceback.print_exc())
+            message_box.exec_()
+
+        # self.load_settings()
+        self.status_bar.clearMessage()
 
 
-class Runnable(QtCore.QRunnable):
-    def __init__(self, func):
-        super(Runnable, self).__init__()
-        self.func = func
+# class Runnable(QtCore.QRunnable):
+#     def __init__(self, func):
+#         super(Runnable, self).__init__()
+#         self.func = func
 
-    def run(self):
-        self.func()
+#     def run(self):
+#         self.func()
 
 
 class ActionWidget(QtWidgets.QWidget):
-    def __init__(self, manager, parent=None):
+    def __init__(self, manager_widget, manager, attribute_view, parent=None):
         super(ActionWidget, self).__init__(parent)
+        self.manager_widget = manager_widget
         self.manager = manager
+        self.attribute_view = attribute_view
         self.setLayout(QtWidgets.QVBoxLayout())
 
     def clear(self):
@@ -195,12 +224,22 @@ class ActionWidget(QtWidgets.QWidget):
                 self.group_boxes[group] = group_box
 
             for action in actions:
-                button = QtWidgets.QPushButton(action.text())
-                button.clicked.connect(action.trigger)
+                action.triggered.connect(self.action_triggered)
+                button = QtWidgets.QPushButton(action.label)
+                button.clicked.connect(partial(self.trigger_action, action))
                 group_box.layout().addWidget(button)
 
         self.layout().addStretch(1)
         self.resize(self.sizeHint())
+
+    def trigger_action(self, action):
+        action.trigger(self.attribute_view.selected_attribute_items)
+
+    def action_triggered(self, attribute_items, update):
+        if update == manager.Action.UPDATE_MODEL:
+            self.attribute_view._model.update_items(attribute_items)
+        elif self.update == manager.Action.RELOAD_MODEL:
+            self.manager_widget.load()
 
 
 class DisplayWidget(QtWidgets.QWidget):
@@ -244,7 +283,9 @@ class DisplayWidget(QtWidgets.QWidget):
             value = getattr(node, str(attribute))
 
             widget = None
-            if isinstance(value, str) or isinstance(value, list):
+
+            # py 2.7
+            if isinstance(value, str) or isinstance(value, unicode) or isinstance(value, list):
                 widget = QtWidgets.QLineEdit(self)
                 signal = widget.textChanged
 

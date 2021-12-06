@@ -24,6 +24,7 @@ except ImportError:
         import plugin_utils
         import utils
 
+
 class Installer(object):
     def __init__(self, dcc=None):
         self.package_path = os.path.normpath(os.path.dirname(__file__))

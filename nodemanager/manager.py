@@ -1,47 +1,48 @@
-import os
-import re
-import glob
 import logging
-import shutil
 from collections import OrderedDict
 
-from PySide2 import QtWidgets, QtCore, QtGui
+from PySide2 import QtCore
 
-try:
-    from . import plugin_utils
-    from . import utils
-    from . import nodes_table
-except ImportError:
-    import plugin_utils
-    import utils
-    import nodes_table
+from . import plugin_utils
+
+
+class Action(QtCore.QObject):
+    UPDATE_MODEL = 0
+    IGNORE_UPDATE = 1
+    RELOAD_MODEL = 2
+
+    triggered = QtCore.Signal(list, int)
+
+    def __init__(self, label, func, update):
+        super(Action, self).__init__()
+        self.label = label
+        self.func = func
+        self.update = update
+
+    def __repr__(self):
+        return 'Action({})'.format(self.label)
+
+    def __str__(self):
+        return self.label
+
+    def trigger(self, nodes):
+        logging.debug('trigger')
+        # todo: try except would be faster
+        nodes = [node for node in nodes if node.exists]
+        if not nodes:
+            return
+        self.func(nodes)
+        logging.debug([self.label, self.update, self.func])
+        self.triggered.emit(nodes, self.update)
 
 
 class Manager(object):
-    attributes = []
-
-    display_name = ''
+    display_name = 'General'
     plugin_name = ''
 
-    settings_group = ''
-    settings_defaults = {
-        }
-
     def __init__(self):
-        self.settings = utils.Settings()
-        self.init_settings()
-
         self.actions = OrderedDict()
         self.filters = []
-        self.model = nodes_table.NodesModel()
-        self.table_view = None
-
-    def init_settings(self):
-        self.settings.beginGroup(self.settings_group)
-        for setting, value in self.settings_defaults.items():
-            if not self.settings.contains(setting):
-                self.settings.setValue(setting, value)
-        self.settings.endGroup()
 
     @classmethod
     def from_plugin(cls, plugin):
@@ -51,9 +52,9 @@ class Manager(object):
     def load_plugin(self):
         pass
 
-    def addAction(self, group, label, func, update_model=True):
-        action = QtWidgets.QAction(label)
-        action.triggered.connect(lambda: self.runAction(func, update_model))
+    def addAction(self, group, label, func, update=Action.UPDATE_MODEL):
+        action = Action(label, func, update)
+
         actions = self.actions.get(group, [])
         if action not in actions:
             actions.append(action)
@@ -71,31 +72,8 @@ class Manager(object):
         if attribute not in self.filters:
             self.filters.append(attribute)
 
-    def load(self):
-        try:
-            self.load_plugin()
-        except RuntimeError:
-            QtWidgets.QMessageBox.warning(
-                self,
-                'Plugin Load Error',
-                'Unable to load plugin: {}'.format(self.plugin_name),
-                QtWidgets.QMessageBox.Ok)
-            return
-        self.model.set_nodes(self.nodes())
-
-    def nodes(self):
+    def nodes(self, options={}):
         return []
-
-    def selected_nodes(self):
-        nodes = []
-        if self.table_view:
-            for selected_index in self.table_view.selectionModel().selectedRows():
-                index = self.table_view.model().mapToSource(selected_index)
-                node = self.model.data(index, role=QtCore.Qt.UserRole + 1)
-                if node:
-                    nodes.append(node)
-
-        return nodes
 
 
 class Node(object):
@@ -114,7 +92,3 @@ class Node(object):
     @property
     def name(self):
         return str(self.node)
-
-
-if __name__ == '__main__':
-    pass

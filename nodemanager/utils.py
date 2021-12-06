@@ -1,9 +1,13 @@
 import os
 import logging
 import json
-from PySide2 import QtWidgets, QtCore, QtGui
 import sys
 import re
+from PySide2 import QtWidgets, QtCore, QtGui
+
+# py 2.7
+if sys.version_info[0] >= 3:
+    unicode = str
 
 
 def join_url(url, *urls):
@@ -120,15 +124,11 @@ class Settings(QtCore.QSettings):
     def list(self, key):
         # default not always working
         value = self.value(key, []) or []
-        # py2.7
-        try:
-            if isinstance(value, basestring):
-                value = [value, ]
-            value = [int(i) if isinstance(i, basestring) and i.isdigit() else i for i in value]
-        except NameError:
-            if isinstance(value, str):
-                value = [value, ]
-            value = [int(i) if isinstance(i, str) and i.isdigit() else i for i in value]
+
+        # py 2.7
+        if isinstance(value, str) or isinstance(value, unicode):
+            value = [value, ]
+        value = [int(i) if (isinstance(i, str) or isinstance(i, unicode)) and i.isdigit() else i for i in value]
 
         return value
 

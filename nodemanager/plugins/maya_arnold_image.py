@@ -1,16 +1,17 @@
 from __future__ import absolute_import
 
+import logging
 import os
 import re
-import logging
-import glob
-import time
 import shutil
-import subprocess
-from enum import Enum
+import collections
+try:
+    from enum import Enum
+except ImportError:
+    from ..enum import Enum
 
-from maya import cmds, mel
-from PySide2 import QtWidgets, QtGui, QtCore
+from maya import cmds, mel, utils as maya_utils
+from PySide2 import QtWidgets
 
 from .. import processing
 from . import maya
@@ -25,22 +26,26 @@ class Manager(maya.Manager):
     def __init__(self, *args):
         super(Manager, self).__init__(*args)
 
-        # addAction(group, label, func, update_model=True)
+        UPDATE_MODEL = manager.Action.UPDATE_MODEL
+        IGNORE_UPDATE = manager.Action.IGNORE_UPDATE
+        RELOAD_MODEL = manager.Action.RELOAD_MODEL
+
+        # addAction(group, label, func, update=UPDATE_MODEL)
         self.addAction('File', 'Set Directory', set_directory)
         self.addAction('File', 'Find and Replace', find_and_replace)
         self.addAction('File', 'Relocate', relocate)
         self.addAction('File', 'Locate', locate)
-        self.addAction('File', 'Open', open_file, False)
-        self.addAction('File', 'Open Directory', open_directory, False)
+        self.addAction('File', 'Open', open_file, IGNORE_UPDATE)
+        self.addAction('File', 'Open Directory', open_directory, IGNORE_UPDATE)
         self.addAction('Parameters', 'Auto Color Space', auto_colorspace)
         self.addAction('Parameters', 'Auto Filter', auto_filter)
         self.addAction('Tiled', 'Generate Tiled', generate_tiled)
         self.addAction('Tiled', 'Switch to Raw', switch_raw)
         self.addAction('Tiled', 'Switch to Tiled', switch_tiled)
-        self.addAction('Node', 'Convert', convert)
-        self.addAction('Node', 'Remove', remove)
-        self.addAction('Node', 'Graph Nodes', graph_nodes, False)
-        self.addAction('Node', 'Select Dependent Objects', select_dependents, False)
+        self.addAction('Node', 'Convert', convert, RELOAD_MODEL)
+        self.addAction('Node', 'Remove', remove, RELOAD_MODEL)
+        self.addAction('Node', 'Graph Nodes', graph_nodes, IGNORE_UPDATE)
+        self.addAction('Node', 'Select Dependent Objects', select_dependents, IGNORE_UPDATE)
 
         self.addFilter('name')
         self.addFilter('status')
@@ -50,6 +55,7 @@ class Manager(maya.Manager):
         self.addFilter('channels')
 
     def nodes(self, options={}):
+        self.load_plugin()
         nodes = []
         maya_nodes = cmds.ls(type='aiImage')
         for maya_node in maya_nodes:
@@ -59,15 +65,6 @@ class Manager(maya.Manager):
 
 
 class Node(maya.Node):
-    '''
-    since the node is using deferred loading in the table to get certain contents,
-    all attributes should stay live?
-    alternatively we store them on the node object and only refresh when the path attribute is being
-    set on the pytthon object. it should probably be consistent but might not make sense to do so.
-    in cations such as auto color space, we should cache that though.
-    '''
-
-    _file_size = None
     _file_sequence_tags = ['<udim>', '<frameNum>', '<uvtile>']
 
     def __init__(self, node):
@@ -115,7 +112,6 @@ class Node(maya.Node):
 
     @filepath.setter
     def filepath(self, value):
-        self._file_size = None
         self.set_node_attr('filename', value)
 
     @property
@@ -139,7 +135,7 @@ class Node(maya.Node):
 
     @property
     def status(self):
-        filepath = next(self.file_sequence, '')
+        filepath = self.real_filepath
 
         if not filepath:
             return FileStatus.NOT_SET
@@ -150,10 +146,7 @@ class Node(maya.Node):
 
     @property
     def file_size(self):
-        if self._file_size is None:
-            self._file_size = utils.FileSize.from_file(next(self.file_sequence, ''))
-
-        return self._file_size
+        return utils.FileSize.from_file(self.real_filepath)
 
     @property
     def channels(self):
@@ -200,15 +193,20 @@ class Node(maya.Node):
     @property
     def file_sequence_regex(self):
         tags = '|'.join(self._file_sequence_tags)
-        file_pattern = re.sub(tags, r'\\d+', re.escape(self.filename))
+        file_pattern = re.sub(tags, r'\\d+', self.filename)
+        file_pattern = re.sub(r'\.', r'\\.', file_pattern)
         return re.compile(file_pattern)
+
+    @property
+    def real_filepath(self):
+        return next(self.file_sequence, '')
 
 
 def open_file(nodes):
     node = nodes[0]
     filepath = node.filepath
     if node.is_file_sequence:
-        filepath = next(node.file_sequence)
+        filepath = node.real_filepath
     if not os.path.isfile(filepath):
         return
 
@@ -346,56 +344,69 @@ def convert(nodes):
 
 
 def convert_node(node, cls):
-    aiimage_file = {
-        'path': 'filename'
-    }
     if cls == 'file':
-        logging.debug('file')
+        replace_node = cmds.shadingNode('file', asUtility=True)
+        cmds.setAttr('{}.fileTextureName'.format(replace_node), node.filepath, type='string')
+        cmds.setAttr('{}.aiFilter'.format(replace_node), node.filter.value)
+        if node.colorSpace in ['sRGB', 'Raw']:
+            cmds.setAttr('{}.colorSpace'.format(replace_node), node.colorSpace, type='string')
+
+        cmds.setAttr('{}.colorGain'.format(replace_node), *node.multiply.getRgbF(), type='double3')
+        cmds.setAttr('{}.colorOffset'.format(replace_node), *node.offset.getRgbF(), type='double3')
+
+        name = node.name
+        cmds.delete(node.node)
+        cmds.rename(replace_node, name)
 
 
 def switch_raw(nodes):
     extensions = ['jpg', 'png', 'tif', 'tiff', 'exr']
     for node in nodes:
-        filepath = next(node.file_sequence, '')
-
-        if not filepath:
-            continue
-
-        base, ext = os.path.splitext(os.path.basename(filepath))
         raw_dir = re.sub(r'[\\/]tiled[\\/]', 'raw', node.directory)
+        base, ext = os.path.splitext(node.filename)
 
         for extension in extensions:
+            raw_filename = '{}.{}'.format(base, extension)
+
+            tags = '|'.join(node._file_sequence_tags)
+            file_pattern = re.sub(tags, r'\\d+', raw_filename)
+            file_pattern = re.sub(r'\.', r'\\.', file_pattern)
             for filename in os.listdir(raw_dir):
-                if filename == '{}.{}'.format(base, extension):
+                if re.match(file_pattern, filename):
+                    node.filename = raw_filename
+                    node.directory = raw_dir
                     break
             else:
                 continue
 
-            base, ext = os.path.splitext(node.filename)
-            raw_filename = '{}.{}'.format(base, extension)
-            node.filename = raw_filename
-            node.directory = raw_dir
             break
 
 
 def switch_tiled(nodes):
     for node in nodes:
-        filepath = next(node.file_sequence, '')
-
-        if not filepath:
-            continue
-
-        base, ext = os.path.splitext(os.path.basename(filepath))
         tiled_dir = re.sub(r'[\\/]raw[\\/]', 'tiled', node.directory)
-        tiled_filepath = os.path.join(tiled_dir, '{}.tx'.format(base))
-        if os.path.isfile(tiled_filepath):
-            base, ext = os.path.splitext(node.filename)
-            tiled_filename = '{}.tx'.format(base)
-            node.filename = tiled_filename
-            node.directory = tiled_dir
+        base, ext = os.path.splitext(node.filename)
+
+        tiled_filename = '{}.tx'.format(base)
+
+        tags = '|'.join(node._file_sequence_tags)
+        file_pattern = re.sub(tags, r'\\d+', tiled_filename)
+        file_pattern = re.sub(r'\.', r'\\.', file_pattern)
+
+        for filename in os.listdir(tiled_dir):
+            if re.match(file_pattern, filename):
+                node.filename = tiled_filename
+                node.directory = tiled_dir
+                break
 
 
 class TiledRunnable(processing.ProcessingRunnable):
+    processing = []
+
+    def __init__(self, item):
+        super(TiledRunnable, self).__init__(item)
+
+        self.node = ProcessingNode(self.node)
 
     def process(self):
         maketx_path = r'C:\Program Files\Autodesk\Arnold\maya2022\bin\maketx.exe'
@@ -403,6 +414,7 @@ class TiledRunnable(processing.ProcessingRunnable):
         output_dir = re.sub(r'[\\/]raw[\\/]', 'tiled', self.node.directory)
 
         input_paths = []
+
         if self.node.is_file_sequence:
             input_paths.extend(self.node.file_sequence)
         else:
@@ -411,7 +423,11 @@ class TiledRunnable(processing.ProcessingRunnable):
         input_paths = list(filter(os.path.isfile, input_paths))
 
         if not input_paths:
-            raise FileNotFoundError
+            # py 2.7
+            try:
+                raise FileNotFoundError(self.node.filepath)
+            except NameError:
+                raise OSError('File not found: {}'.format(self.node.filepath))
 
         for input_path in input_paths:
             if not self.running:
@@ -419,6 +435,10 @@ class TiledRunnable(processing.ProcessingRunnable):
 
             filename = os.path.basename(input_path)
             name, ext = os.path.splitext(filename)
+
+            if ext == 'tx':
+                raise Exception('File already has extension: {}'.format(ext))
+
             output_filename = '{}.tx'.format(name)
             output_path = os.path.join(output_dir, output_filename)
 
@@ -441,26 +461,42 @@ class TiledRunnable(processing.ProcessingRunnable):
                 '-o',  output_path
                 ]
 
-            self.logger.info(' '.join(command_args))
+            # py 2.7
+            self.logger.info(str(' '.join(command_args)))
+
+            # is the file being process by another runnable?
+            if input_path in TiledRunnable.processing:
+                self.logger.info('Skipping... File already being processed by a different thread.')
+                continue
+            TiledRunnable.processing.append(input_path)
 
             if self.popen(command_args):
+                # any return code other than None means there was an error.
                 return
-        self.node.directory = output_dir
         name, ext = os.path.splitext(self.node.filename)
-        self.node.filename = '{}.tx'.format(name)
+        outout_filename = '{}.tx'.format(name)
+
+        self.node.directory = output_dir
+        self.node.filename = outout_filename
 
         return True
 
     def display_text(self):
         return self.node.filepath
 
+    @staticmethod
+    def reset():
+        TiledRunnable.processing = []
+
+    def get_attr(self, name):
+        return maya_utils.executeInMainThreadWithResult(lambda: getattr(self.node, name))
+
 
 class LocateRunnable(processing.ProcessingRunnable):
     cache = []
 
     def process(self):
-        # todo: replace with actual status constant
-        if self.node.status or not self.node.filename:
+        if not self.node.filename:
             return True
 
         self.logger.info('Searching recursivly: {}'.format(self.kwargs['path']))
@@ -505,6 +541,7 @@ class LocateRunnable(processing.ProcessingRunnable):
 
 class RelocateRunnable(processing.ProcessingRunnable):
     def process(self):
+        target_dir = self.node.directory
         for source_path in self.node.file_sequence:
             if not self.running:
                 return
@@ -539,3 +576,38 @@ class FileStatus(Enum):
     EXISTS = 1
     NOT_FOUND = 2
     NOT_SET = 3
+
+
+class ProcessingNode(object):
+    def __init__(self, node):
+        self.node = node
+
+        attrs = [
+            'filepath',
+            'filename',
+            'directory',
+            'file_sequence',
+            'is_file_sequence',
+            'real_filepath'
+        ]
+        for name in attrs:
+            value = getattr(self.node, name)
+            if isinstance(value, collections.Iterator):
+                value = list(value)
+            object.__setattr__(self, name, value)
+
+    # def __getattribute__(self, name):
+    #     if name == 'node':
+    #         return object.__getattribute__(self, name)
+    #     else:
+    #         logging.debug(name)
+    #         maya_utils.executeInMainThreadWithResult(lambda: getattr(self.node, name))
+    #         return 'asd'
+    #         result = maya_utils.executeInMainThreadWithResult(lambda: getattr(self.node, name))
+    #         return result
+
+    def __setattr__(self, name, value):
+        if name == 'node':
+            object.__setattr__(self, name, value)
+        else:
+            maya_utils.executeDeferred(lambda: setattr(self.node, name, value))

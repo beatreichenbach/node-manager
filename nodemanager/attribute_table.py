@@ -1,20 +1,18 @@
-import os
-import re
-import glob
 import logging
-import shutil
-from enum import Enum
+import sys
+try:
+    from enum import Enum
+except ImportError:
+    from ..enum import Enum
 
 from PySide2 import QtWidgets, QtCore, QtGui
 
-try:
-    from . import gui_utils
-    from . import utils
-    from . import manager
-except ImportError:
-    import gui_utils
-    import utils
-    import manager
+from . import utils
+
+
+# py 2.7
+if sys.version_info[0] >= 3:
+    unicode = str
 
 
 class AttributeTableView(QtWidgets.QTableView):
@@ -77,7 +75,7 @@ class AttributeTableView(QtWidgets.QTableView):
             for i in range(self._model.columnCount()):
                 attribute = self._model.headerData(i, QtCore.Qt.Horizontal, QtCore.Qt.UserRole + 1)
                 value = getattr(node, attribute)
-                delegate = Delegate.fromValue(value, parent=self)
+                delegate = self.delegate_from_value(value, parent=self)
                 self.setItemDelegateForColumn(i, delegate)
 
     def update_header(self):
@@ -127,7 +125,7 @@ class AttributeTableView(QtWidgets.QTableView):
                 'visibility': visibility,
                 'visual_index': visual_index
             }
-        logging.debug(['get_header', headers])
+        # logging.debug(['get_header', headers])
 
         return headers
 
@@ -140,7 +138,7 @@ class AttributeTableView(QtWidgets.QTableView):
             # set s tate from cache
             headers = self._header_state
 
-        logging.debug(['set_header', headers])
+        # logging.debug(['set_header', headers])
         header = self.horizontalHeader()
         for i in range(header.count()):
             attribute = self._model.horizontalHeaderItem(i).data()
@@ -155,9 +153,40 @@ class AttributeTableView(QtWidgets.QTableView):
                 header.moveSection(header.visualIndex(i), values.get('visual_index', i))
         self.update_header_actions()
 
+    @staticmethod
+    def delegate_from_value(value, parent=None):
+        if isinstance(value, Enum):
+            delegate = EnumDelegate(enum=value.__class__, parent=parent)
+        elif isinstance(value, utils.FileSize):
+            delegate = FileSizeDelegate(parent)
+        elif isinstance(value, QtGui.QColor):
+            delegate = ColorDelegate(parent)
+        elif isinstance(value, bool):
+            delegate = BoolDelegate(parent)
+        elif isinstance(value, list):
+            delegate = ListDelegate(parent)
+        else:
+            delegate = Delegate(parent)
+        return delegate
+
+    @property
+    def selected_attribute_items(self):
+        attribute_items = []
+        for selected_index in self.selectionModel().selectedRows():
+            index = self.model().mapToSource(selected_index)
+            attribute_item = self._model.attribute_item_from_index(index)
+            if attribute_item:
+                attribute_items.append(attribute_item)
+
+        return attribute_items
+
 
 class AttributeItemModel(QtGui.QStandardItemModel):
     updated = QtCore.Signal()
+
+    def __init__(self, parent=None):
+        super(AttributeItemModel, self).__init__(parent)
+        self.attributes = []
 
     def data(self, index, role=QtCore.Qt.DisplayRole):
         # override to enable deferred loading of items
@@ -183,16 +212,20 @@ class AttributeItemModel(QtGui.QStandardItemModel):
         return True and result
 
     def attribute_item_from_index(self, index):
-        return self.item(index.row(), 0).data()
+        item = self.item(index.row(), 0)
+        if item:
+            return item.data()
 
     def attribute_from_index(self, index):
-        return self.horizontalHeaderItem(index.column()).data()
+        header_item = self.horizontalHeaderItem(index.column())
+        if header_item:
+            return header_item.data()
 
     def set_items(self, attribute_items):
         self.clear()
         for attribute_item in attribute_items:
             items = []
-            for i, attribute in attribute_item.attributes:
+            for i, attribute in enumerate(attribute_item.attributes):
                 item = QtGui.QStandardItem()
 
                 if attribute in attribute_item.locked_attributes:
@@ -201,8 +234,9 @@ class AttributeItemModel(QtGui.QStandardItemModel):
                 if i == 0:
                     item.setData(attribute_item)
 
+                items.append(item)
+
             if items:
-                items[0].append(attribute_item)
                 self.appendRow(items)
 
         self.set_headers(attribute_items)
@@ -229,8 +263,7 @@ class AttributeItemModel(QtGui.QStandardItemModel):
     def set_headers(self, attribute_items):
         logging.debug('set_headers')
         if attribute_items:
-            node = attribute_items[0]
-            self.attributes = node.attributes
+            self.attributes = attribute_items[0].attributes
             for i, attribute in enumerate(self.attributes):
                 item = QtGui.QStandardItem()
                 item.setText(utils.title(attribute))
@@ -241,8 +274,13 @@ class AttributeItemModel(QtGui.QStandardItemModel):
 class AttributeSortModel(QtCore.QSortFilterProxyModel):
     filters = {}
 
+    def __init__(self, parent=None):
+        super(AttributeSortModel, self).__init__(parent)
+        self.setFilterRegExp('')
+
     def value(self, value):
-        if isinstance(value, str):
+        # py 2.7
+        if isinstance(value, str) or isinstance(value, unicode):
             if self.sortCaseSensitivity() == QtCore.Qt.CaseInsensitive:
                 return value.lower()
         elif isinstance(value, QtGui.QColor):
@@ -270,10 +308,13 @@ class AttributeSortModel(QtCore.QSortFilterProxyModel):
             item_value = self.value(model.data(index))
             filter_value = self.value(filter_value)
 
+            # support for filtering string lists
             if isinstance(item_value, list):
                 item_value = ''.join(item_value)
 
-            if isinstance(filter_value, str):
+
+            # py 2.7
+            if isinstance(filter_value, str) or isinstance(filter_value, unicode):
                 # todo: add support for expressions?
                 if filter_value not in item_value:
                     break
@@ -286,7 +327,6 @@ class AttributeSortModel(QtCore.QSortFilterProxyModel):
 
     def update_filters(self, filters):
         self.filters = filters
-        self.setFilterRegExp('')
 
 
 class Delegate(QtWidgets.QStyledItemDelegate):
@@ -307,22 +347,6 @@ class Delegate(QtWidgets.QStyledItemDelegate):
 
     def updateEditorGeometry(self, editor, option, index):
         editor.setGeometry(option.rect)
-
-    @classmethod
-    def fromValue(cls, value, parent=None):
-        if isinstance(value, Enum):
-            delegate = EnumDelegate(enum=value.__class__, parent=parent)
-        elif isinstance(value, utils.FileSize):
-            delegate = FileSizeDelegate(parent)
-        elif isinstance(value, QtGui.QColor):
-            delegate = ColorDelegate(parent)
-        elif isinstance(value, bool):
-            delegate = BoolDelegate(parent)
-        elif isinstance(value, list):
-            delegate = ListDelegate(parent)
-        else:
-            delegate = cls(parent)
-        return delegate
 
 
 class FileSizeDelegate(Delegate):
@@ -345,7 +369,6 @@ class BoolDelegate(Delegate):
 
     def createEditor(self, parent, option, index):
         editor = QtWidgets.QComboBox(parent)
-        # editor.setFocusPolicy(QtCore.Qt.StrongFocus)
         editor.addItems(('Disabled', 'Enabled'))
         editor.currentIndexChanged.connect(lambda: self.commitData.emit(editor))
         editor.currentIndexChanged.connect(lambda: self.closeEditor.emit(editor, self.NoHint))
@@ -370,7 +393,6 @@ class EnumDelegate(Delegate):
 
     def createEditor(self, parent, option, index):
         editor = QtWidgets.QComboBox(parent)
-        # editor.setFocusPolicy(QtCore.Qt.StrongFocus)
         for member in self.enum:
             editor.addItem(member.name, member.value)
         editor.currentIndexChanged.connect(lambda: self.commitData.emit(editor))

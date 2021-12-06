@@ -1,32 +1,19 @@
 import os
-import re
-import glob
 import logging
-import shutil
 
 from PySide2 import QtWidgets, QtCore, QtGui
 
-try:
-    from . import gui_utils
-    from . import plugin_utils
-    from . import utils
-    from .utils import NotFoundException, NoSelectionException
-    from . import setup
-    from . import manager_widget
-except ImportError:
-    import gui_utils
-    import plugin_utils
-    import utils
-    from utils import NotFoundException, NoSelectionException
-    import setup
-    import manager_widget
+from . import gui_utils
+from . import plugin_utils
+from . import utils
+from . import setup
+from . import manager_widget
 
 
 class ManagerDialog(QtWidgets.QDialog):
     def __init__(self, parent=None, dcc=''):
         super(ManagerDialog, self).__init__(parent)
 
-        self.setObjectName('ManagerDialog')
         self.setWindowTitle('Node Manager')
         self.dcc = dcc
         self.settings = utils.Settings()
@@ -44,6 +31,12 @@ class ManagerDialog(QtWidgets.QDialog):
 
         # menu bar
         menu_bar = QtWidgets.QMenuBar(self)
+
+        menu = QtWidgets.QMenu('File')
+        action = menu.addAction('Open Script Directory')
+        action.triggered.connect(self.open_scripts_dir)
+        menu_bar.addMenu(menu)
+
         menu = QtWidgets.QMenu('Settings')
         action = menu.addAction('Edit Settings')
         action.triggered.connect(self.edit_settings)
@@ -60,24 +53,6 @@ class ManagerDialog(QtWidgets.QDialog):
         action.triggered.connect(self.update)
         menu_bar.addMenu(menu)
         self.layout().setMenuBar(menu_bar)
-
-        # progress and status bar
-        self.main_prgbar.setVisible(False)
-        size_policy = self.main_prgbar.sizePolicy()
-        # size_policy.setRetainSizeWhenHidden(True)
-        self.main_prgbar.setSizePolicy(size_policy)
-
-        self.status_bar = QtWidgets.QStatusBar()
-        palette = self.status_bar.palette()
-        palette.setColor(palette.Window, palette.color(palette.AlternateBase))
-        palette.setColor(palette.WindowText, palette.color(palette.HighlightedText))
-        self.status_bar.setPalette(palette)
-        self.status_bar.setAutoFillBackground(True)
-
-        self.status_bar.setSizeGripEnabled(False)
-        self.footer_lay.insertWidget(0, self.status_bar)
-        self.footer_lay.setStretch(0, 1)
-        self.footer_lay.setStretch(1, 0)
 
         # init tabs
         self.update_context()
@@ -111,6 +86,7 @@ class ManagerDialog(QtWidgets.QDialog):
         value = self.settings.value('manager_dialog/pos')
         if value:
             self.move(value)
+
         value = self.settings.value('manager_dialog/size')
         if value:
             self.resize(value)
@@ -139,9 +115,6 @@ class ManagerDialog(QtWidgets.QDialog):
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
         if result == QtWidgets.QMessageBox.Yes:
             self.settings.clear()
-
-    def open_configs_dir(self):
-        os.startfile(self.settings.configs_path)
 
     def open_scripts_dir(self):
         os.startfile(os.path.dirname(__file__))
@@ -184,10 +157,9 @@ class ManagerDialog(QtWidgets.QDialog):
         context = self.context_cmb.currentData()
         if not context:
             return
-        for node in sorted(plugin_utils.node_plugins(self.dcc, context)):
-            widget = manager_widget.ManagerWidget(self, self.dcc, context, node)
-            self.manager_tab.addTab(widget, node.title())
-            widget.message.connect(self.messaged)
+        for node_cls in sorted(plugin_utils.node_plugins(self.dcc, context)):
+            widget = manager_widget.ManagerWidget(self, self.dcc, context, node_cls)
+            self.manager_tab.addTab(widget, node_cls.title())
         self.manager_widget = self.manager_tab.currentWidget()
 
         self.manager_tab.blockSignals(False)
@@ -198,12 +170,6 @@ class ManagerDialog(QtWidgets.QDialog):
             self.manager_widget.save_settings()
         self.manager_widget = self.manager_tab.currentWidget()
         self.manager_widget.load_settings()
-
-    def messaged(self, text, timeout=0):
-        if not text:
-            self.status_bar.clearMessage()
-        else:
-            self.status_bar.showMessage(text, timeout)
 
 
 if __name__ == '__main__':

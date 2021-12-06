@@ -1,18 +1,24 @@
-import os
-import re
 import logging
-import glob
-import time
-import shutil
+import os
+import sys
 import random
 import subprocess
 from functools import partial
-from enum import Enum, unique
-from io import StringIO
+
+
+# py 2.7
+if sys.version_info[0] >= 3:
+    from io import StringIO
+else:
+    from io import BytesIO as StringIO
+
+try:
+    from enum import Enum, unique
+except ImportError:
+    from ..enum import Enum, unique
 
 from PySide2 import QtWidgets, QtGui, QtCore
 
-from . import manager
 from . import gui_utils
 
 
@@ -77,7 +83,7 @@ class ProcessingDialog(QtWidgets.QDialog):
             if not success:
                 raise Exception(
                     'Could not exit all running threads. It is recommended to save and '
-                    'restart the application.') from Exception
+                    'restart the application.')
         except Exception as e:
             logging.critical(e, exc_info=True)
         finally:
@@ -323,7 +329,9 @@ class ProcessingRunnable(QtCore.QRunnable):
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             startupinfo=startupinfo,
-            text=True,
+            # py 2.7
+            # text=True,
+            universal_newlines=True
         )
 
         if self.logger.level == logging.DEBUG:
@@ -339,6 +347,10 @@ class ProcessingRunnable(QtCore.QRunnable):
 
     def display_text(self):
         return self.node.name
+
+    @staticmethod
+    def reset():
+        pass
 
 
 @unique
@@ -378,10 +390,12 @@ class ProcessingItem(QtCore.QObject):
         self.runnable = None
         self.state = ProcessingState.OPEN
 
+        self.runnable_cls.reset()
+
         self.logger = logging.getLogger(str(hash(self)))
         self.logger.propagate = False
         self.log_handler = Handler(self, StringIO())
-        self.log_handler.setFormatter(logging.Formatter(fmt='{levelname}: {message}', style='{'))
+        self.log_handler.setFormatter(logging.Formatter(fmt='%(levelname)s: %(message)s'))
         self.logger.addHandler(self.log_handler)
 
     def _started(self):
