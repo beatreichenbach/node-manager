@@ -2,6 +2,9 @@ from __future__ import absolute_import
 import sys
 import logging
 import os
+import collections
+from PySide2 import QtWidgets, QtGui
+from maya import mel, cmds, utils as maya_utils
 
 try:
     from enum import Enum
@@ -9,13 +12,11 @@ except ImportError:
     # py 2.7
     from ..enum import Enum
 
-from PySide2 import QtWidgets, QtGui
-
-from maya import mel, cmds
-
 from nodemanager import manager_dialog
 from .. import manager
 from .. import setup
+from .. import processing
+from .. import util_dialog
 
 # py 2.7
 if sys.version_info[0] >= 3:
@@ -30,34 +31,29 @@ def run():
     return main_window
 
 
-class Manager(manager.Manager):
-    plugin_name = 'mtoa.mll'
-
-    def load_plugin(self):
-        if not self.plugin_name:
-            raise RuntimeError
-        if not cmds.pluginInfo(self.plugin_name, query=True, loaded=True):
-            cmds.loadPlugin(self.plugin_name)
+UPDATE_MODEL = manager.Action.UPDATE_MODEL
+IGNORE_UPDATE = manager.Action.IGNORE_UPDATE
+RELOAD_MODEL = manager.Action.RELOAD_MODEL
 
 
 class Node(manager.Node):
     def __getattr__(self, name):
-        return self.get_node_attr(name)
+        return self._get_node_attr(name)
 
     def __setattr__(self, name, value):
         if name not in dir(self):
-            self.set_node_attr(name, value)
+            self._set_node_attr(name, value)
         else:
             object.__setattr__(self, name, value)
 
-    def attr(self, name):
+    def _attr(self, name):
         return '{}.{}'.format(self.node, name)
 
-    def has_node_attr(self, name):
+    def _has_node_attr(self, name):
         return cmds.attributeQuery(name, node=self.node, exists=True)
 
-    def get_node_attr(self, name):
-        attr = self.attr(name)
+    def _get_node_attr(self, name):
+        attr = self._attr(name)
         try:
             attr_type = cmds.getAttr(attr, type=True)
             value = cmds.getAttr(attr)
@@ -75,8 +71,8 @@ class Node(manager.Node):
             value = class_(value)
         return value
 
-    def set_node_attr(self, name, value):
-        attr = self.attr(name)
+    def _set_node_attr(self, name, value):
+        attr = self._attr(name)
         try:
             # py 2.7
             if isinstance(value, str) or isinstance(value, unicode):
@@ -105,10 +101,32 @@ class Node(manager.Node):
         return cmds.objExists(self.node)
 
 
-class Installer(setup.Installer):
-    # def __init__(self):
-    #     super(Installer, self).__init__()
+class Manager(manager.Manager):
+    plugin_name = 'mtoa.mll'
 
+    def __init__(self, *args):
+        super(Manager, self).__init__(*args)
+
+        self.addAction('Node', 'Remove', remove, RELOAD_MODEL)
+        self.addAction('Node', 'Graph Nodes', graph_nodes, IGNORE_UPDATE)
+
+    def load_plugin(self):
+        if not self.plugin_name:
+            raise RuntimeError
+        if not cmds.pluginInfo(self.plugin_name, query=True, loaded=True):
+            cmds.loadPlugin(self.plugin_name)
+
+    def nodes(self, options={}, node_cls=Node, node_type=''):
+        self.load_plugin()
+        nodes = []
+        maya_nodes = cmds.ls(type=node_type)
+        for maya_node in maya_nodes:
+            node = node_cls(maya_node)
+            nodes.append(node)
+        return nodes
+
+
+class Installer(setup.Installer):
     def create_button(self):
         shelf_name = 'Plugins'
         label = 'nodemanager'
@@ -162,3 +180,91 @@ class Installer(setup.Installer):
 
         logging.info('Installation successfull.')
         return True
+
+
+class LocateRunnable(manager.LocateRunnable):
+    def __init__(self, item):
+        super(LocateRunnable, self).__init__(item)
+
+        self.node = ProcessingNode(self.node)
+
+
+class RelocateRunnable(manager.RelocateRunnable):
+    def __init__(self, item):
+        super(RelocateRunnable, self).__init__(item)
+
+        self.node = ProcessingNode(self.node)
+
+
+class TiledRunnable(manager.TiledRunnable):
+    def __init__(self, item):
+        super(TiledRunnable, self).__init__(item)
+
+        self.node = ProcessingNode(self.node)
+
+
+class ProcessingNode(object):
+    def __init__(self, node):
+        self._node = node
+
+        # freeze attributes to be used in thread
+        for attr in dir(self._node):
+            if not attr.startswith('_'):
+                value = getattr(self._node, attr)
+                if isinstance(value, collections.Iterator):
+                    value = list(value)
+                object.__setattr__(self, attr, value)
+
+    def __setattr__(self, name, value):
+        if name == '_node':
+            object.__setattr__(self, name, value)
+        else:
+            maya_utils.executeDeferred(lambda: setattr(self._node, name, value))
+
+
+def graph_nodes(nodes):
+    cmds.select(nodes, replace=True)
+
+    editor = mel.eval('getHypershadeNodeEditor()')
+    if editor:
+        for node in nodes:
+            cmds.nodeEditor(editor, edit=True, frameAll=True, addNode=node)
+
+
+def remove(nodes):
+    # todo: keep connections
+    for node in nodes:
+        if node.exists:
+            cmds.delete(node)
+
+
+def generate_tiled(nodes):
+    runnable_cls = TiledRunnable
+    processing.ProcessingDialog.process(nodes, runnable_cls)
+
+
+def relocate(nodes):
+    # todo: add parent
+    path = nodes[0].directory
+    values = util_dialog.RelocateDialog.get_values(path)
+
+    if not values or not os.path.isdir(values['path']):
+        return
+
+    runnable = RelocateRunnable
+    runnable.kwargs = values
+
+    processing.ProcessingDialog.process(nodes, runnable)
+
+
+def locate(nodes):
+    path = nodes[0].directory
+    values = util_dialog.FindFilesDialog.get_values(path)
+
+    if not values or not os.path.isdir(values['path']):
+        return
+
+    runnable = LocateRunnable
+    runnable.kwargs = values
+
+    processing.ProcessingDialog.process(nodes, runnable)

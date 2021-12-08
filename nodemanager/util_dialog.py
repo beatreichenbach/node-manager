@@ -1,5 +1,4 @@
 import logging
-import sys
 import os
 from PySide2 import QtWidgets, QtCore, QtGui
 
@@ -148,12 +147,3 @@ class SetDirectoryDialog(QtWidgets.QDialog):
         result = dialog.exec_()
         if result == QtWidgets.QDialog.Accepted:
             return dialog.values()
-
-
-if __name__ == '__main__':
-    logging.getLogger().setLevel(logging.DEBUG)
-
-    app = QtWidgets.QApplication(sys.argv)
-    values = SetDirectoryDialog.get_values()
-    logging.debug(values)
-    sys.exit(app.exec_())

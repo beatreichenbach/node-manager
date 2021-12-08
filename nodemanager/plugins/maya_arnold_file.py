@@ -13,7 +13,7 @@ RELOAD_MODEL = manager.Action.RELOAD_MODEL
 
 
 class Manager(maya.Manager):
-    display_name = 'aiImage'
+    display_name = 'File'
 
     def __init__(self, *args):
         super(Manager, self).__init__(*args)
@@ -41,7 +41,7 @@ class Manager(maya.Manager):
         self.addFilter('channels')
 
     def nodes(self, options={}):
-        return super(Manager, self).nodes(options, Node, 'aiImage')
+        return super(Manager, self).nodes(options, Node, 'file')
 
 
 class Node(manager.FileNode, maya.Node):
@@ -63,14 +63,16 @@ class Node(manager.FileNode, maya.Node):
 
         attrs = [
             'name',
-            'status',
-            'colorSpace',
-            'filter',
             'file_size',
             'filename',
             'directory',
-            'autoTx',
-            'multiply',
+            'status',
+            'alphaIsLuminance',
+            'colorGain',
+            'colorOffset',
+            'colorSpace',
+            'filterType',
+            'aiFilter',
             'channels',
         ]
 
@@ -78,11 +80,11 @@ class Node(manager.FileNode, maya.Node):
 
     @property
     def filepath(self):
-        return self._get_node_attr('filename')
+        return self._get_node_attr('fileTextureName')
 
     @filepath.setter
     def filepath(self, value):
-        self._set_node_attr('filename', value)
+        self._set_node_attr('fileTextureName', value)
 
     @property
     def channels(self):
@@ -143,7 +145,7 @@ def auto_colorspace(nodes):
 
 
 def convert(nodes):
-    classes = ['file']
+    classes = ['aiImage']
     item, result = QtWidgets.QInputDialog.getItem(
         None,
         'Convert',
@@ -157,15 +159,15 @@ def convert(nodes):
 
 
 def convert_node(node, cls):
-    if cls == 'file':
-        replace_node = cmds.shadingNode('file', asUtility=True)
-        cmds.setAttr('{}.fileTextureName'.format(replace_node), node.filepath, type='string')
-        cmds.setAttr('{}.aiFilter'.format(replace_node), node.filter.value)
+    if cls == 'aiImage':
+        replace_node = cmds.shadingNode('aiImage', asUtility=True)
+        cmds.setAttr('{}.filename'.format(replace_node), node.filepath, type='string')
+        cmds.setAttr('{}.filter'.format(replace_node), node.aiFilter.value)
         if node.colorSpace in ['sRGB', 'Raw']:
             cmds.setAttr('{}.colorSpace'.format(replace_node), node.colorSpace, type='string')
 
-        cmds.setAttr('{}.colorGain'.format(replace_node), *node.multiply.getRgbF(), type='double3')
-        cmds.setAttr('{}.colorOffset'.format(replace_node), *node.offset.getRgbF(), type='double3')
+        cmds.setAttr('{}.multiply'.format(replace_node), *node.colorGain.getRgbF(), type='double3')
+        cmds.setAttr('{}.offset'.format(replace_node), *node.colorOffset.getRgbF(), type='double3')
 
         name = node.name
         cmds.delete(node.node)

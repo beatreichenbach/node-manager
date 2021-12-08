@@ -1,9 +1,7 @@
 import importlib
 import pkgutil
-import sys
 import logging
 import re
-from PySide2 import QtWidgets
 
 try:
     from . import plugins
@@ -72,10 +70,3 @@ def plugin_class(cls, plugin):
             'Could not find plugin: "{}{}" '
             'Using base class instead.'.format(package, plugin))
     return cls
-
-
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG)
-    logging.debug(all_plugins())
-    logging.debug(contexts('maya'))
-    logging.debug(node_plugins('maya', 'arnold'))

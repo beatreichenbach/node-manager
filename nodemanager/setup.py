@@ -14,8 +14,8 @@ except ImportError:
 from contextlib import closing
 
 try:
-    from textureimporter import plugin_utils
-    from textureimporter import utils
+    from nodemanager import plugin_utils
+    from nodemanager import utils
 except ImportError:
     try:
         from . import plugin_utils
@@ -81,7 +81,7 @@ class Installer(object):
             try:
                 utils.unload_modules()
                 logging.debug('Loading temp setup module.')
-                from textureimporter import setup
+                from nodemanager import setup
                 logging.debug('Installing from temp directory.')
                 setup.Installer.install(self.dcc)
                 logging.debug('Deleting setup module.')
@@ -114,7 +114,6 @@ class Installer(object):
 
             # preserving user data
             user_files = []
-            user_files.extend(glob.glob(os.path.join(destination_path, 'configs', '*.json')))
             user_files.extend(glob.glob(os.path.join(destination_path, '*.ini')))
             for user_file in user_files:
                 tmp_user_path = os.path.join(tmp_path, os.path.relpath(user_file, destination_path))

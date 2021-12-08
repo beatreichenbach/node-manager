@@ -22,13 +22,6 @@ class AttributeTableView(QtWidgets.QTableView):
         self._header_state = {}
         self.init_ui()
 
-    @property
-    def _model(self):
-        model = super(AttributeTableView, self).model()
-        if model and isinstance(model, QtCore.QAbstractProxyModel):
-            model = model.sourceModel()
-        return model
-
     def init_ui(self):
         self.setSelectionBehavior(QtWidgets.QTableView.SelectRows)
         self.setAlternatingRowColors(True)
@@ -43,31 +36,35 @@ class AttributeTableView(QtWidgets.QTableView):
         header = self.horizontalHeader()
         header.setContextMenuPolicy(QtCore.Qt.ActionsContextMenu)
 
+    @property
+    def _model(self):
+        model = super(AttributeTableView, self).model()
+        if model and isinstance(model, QtCore.QAbstractProxyModel):
+            model = model.sourceModel()
+        return model
+
+    @property
+    def selected_attribute_items(self):
+        attribute_items = []
+        for selected_index in self.selectionModel().selectedRows():
+            index = self.model().mapToSource(selected_index)
+            attribute_item = self._model.attribute_item_from_index(index)
+            if attribute_item:
+                attribute_items.append(attribute_item)
+
+        return attribute_items
+
     def update_requested(self):
         header_state = self.header_state
         if header_state:
+            logging.debug('store state')
             self._header_state = header_state
 
     def update(self):
         logging.debug('update_nodes_view')
-        # self.update_header_actions()
         self.update_delegates()
+        # rebuild header_state from cache
         self.header_state = self._header_state
-
-    def update_header_actions(self):
-        header = self.horizontalHeader()
-        for action in header.actions():
-            header.removeAction(action)
-
-        logging.debug('update_header_actions')
-        for i in range(header.count()):
-            item = self._model.horizontalHeaderItem(i)
-
-            action = QtWidgets.QAction(item.text(), self)
-            action.setCheckable(True)
-            action.setChecked(not header.isSectionHidden(i))
-            action.triggered.connect(self.update_header)
-            header.addAction(action)
 
     def update_delegates(self):
         node = self._model.data(self._model.index(0, 0), QtCore.Qt.UserRole + 1)
@@ -125,8 +122,6 @@ class AttributeTableView(QtWidgets.QTableView):
                 'visibility': visibility,
                 'visual_index': visual_index
             }
-        # logging.debug(['get_header', headers])
-
         return headers
 
     @header_state.setter
@@ -135,10 +130,9 @@ class AttributeTableView(QtWidgets.QTableView):
             # cache state
             self._header_state = headers
         else:
-            # set s tate from cache
+            # set state from cache
             headers = self._header_state
 
-        # logging.debug(['set_header', headers])
         header = self.horizontalHeader()
         for i in range(header.count()):
             attribute = self._model.horizontalHeaderItem(i).data()
@@ -152,6 +146,21 @@ class AttributeTableView(QtWidgets.QTableView):
                 header.resizeSection(i, width)
                 header.moveSection(header.visualIndex(i), values.get('visual_index', i))
         self.update_header_actions()
+
+    def update_header_actions(self):
+        header = self.horizontalHeader()
+        for action in header.actions():
+            header.removeAction(action)
+
+        logging.debug('update_header_actions')
+        for i in range(header.count()):
+            item = self._model.horizontalHeaderItem(i)
+
+            action = QtWidgets.QAction(item.text(), self)
+            action.setCheckable(True)
+            action.setChecked(not header.isSectionHidden(i))
+            action.triggered.connect(self.update_header)
+            header.addAction(action)
 
     @staticmethod
     def delegate_from_value(value, parent=None):
@@ -169,19 +178,9 @@ class AttributeTableView(QtWidgets.QTableView):
             delegate = Delegate(parent)
         return delegate
 
-    @property
-    def selected_attribute_items(self):
-        attribute_items = []
-        for selected_index in self.selectionModel().selectedRows():
-            index = self.model().mapToSource(selected_index)
-            attribute_item = self._model.attribute_item_from_index(index)
-            if attribute_item:
-                attribute_items.append(attribute_item)
-
-        return attribute_items
-
 
 class AttributeItemModel(QtGui.QStandardItemModel):
+    update_requested = QtCore.Signal()
     updated = QtCore.Signal()
 
     def __init__(self, parent=None):
@@ -222,6 +221,7 @@ class AttributeItemModel(QtGui.QStandardItemModel):
             return header_item.data()
 
     def set_items(self, attribute_items):
+        self.update_requested.emit()
         self.clear()
         for attribute_item in attribute_items:
             items = []

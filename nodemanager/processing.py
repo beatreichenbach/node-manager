@@ -4,7 +4,8 @@ import sys
 import random
 import subprocess
 from functools import partial
-
+from enum import Enum, unique
+from PySide2 import QtWidgets, QtGui, QtCore
 
 # py 2.7
 if sys.version_info[0] >= 3:
@@ -12,19 +13,10 @@ if sys.version_info[0] >= 3:
 else:
     from io import BytesIO as StringIO
 
-try:
-    from enum import Enum, unique
-except ImportError:
-    from ..enum import Enum, unique
-
-from PySide2 import QtWidgets, QtGui, QtCore
-
 from . import gui_utils
 
 
 class ProcessingDialog(QtWidgets.QDialog):
-    # on fail: ok
-
     def __init__(self, nodes, runnable_cls, parent=None):
         super(ProcessingDialog, self).__init__(parent)
         self.runnable_cls = runnable_cls
@@ -69,7 +61,6 @@ class ProcessingDialog(QtWidgets.QDialog):
         self.process_view.restarted.connect(self.reset_progress)
 
     def reject(self):
-        # todo: can this be put into a property?
         if self.runnable_count - self.runnable_completed:
             self.status_bar.showMessage('Waiting for all running processes to exit...')
             self.status_bar.repaint()
@@ -350,6 +341,7 @@ class ProcessingRunnable(QtCore.QRunnable):
 
     @staticmethod
     def reset():
+        # reset the runnable class, clearing any class variables that are set during the processing
         pass
 
 
@@ -431,7 +423,10 @@ class ProcessingItem(QtCore.QObject):
             self.start()
 
     def stop(self):
-        if self.state in (ProcessingState.OPEN, ProcessingState.PENDING, ProcessingState.INPROGRESS):
+        if self.state in (
+                ProcessingState.OPEN,
+                ProcessingState.PENDING,
+                ProcessingState.INPROGRESS):
             self.runnable.stop()
 
     def clear_log(self):

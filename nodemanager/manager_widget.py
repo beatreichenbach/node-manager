@@ -23,7 +23,6 @@ if sys.version_info[0] >= 3:
 class ManagerWidget(QtWidgets.QWidget):
     message = QtCore.Signal(str)
 
-    # todo: when actions are taller than table, bottom scroll disappears
     def __init__(self, parent=None, dcc='', context='', node_cls=''):
         super(ManagerWidget, self).__init__(parent)
 
@@ -44,7 +43,7 @@ class ManagerWidget(QtWidgets.QWidget):
 
         # for testing purposes only
         # todo: add setting for autoload
-        self.load()
+        # self.load()
 
     def init_ui(self):
         gui_utils.load_ui(self, 'manager_widget.ui')
@@ -105,9 +104,14 @@ class ManagerWidget(QtWidgets.QWidget):
         self.footer_lay.setStretch(0, 1)
         self.footer_lay.setStretch(1, 0)
 
+        # todo:
+        self.limit_lbl.setVisible(False)
+        self.selection_chk.setVisible(False)
+        self.visible_chk.setVisible(False)
+
     def connect_ui(self):
         self.load_btn.clicked.connect(self.load)
-        # self.model.update_requested.connect(self.attribute_view.update_requested)
+        self.model.update_requested.connect(self.attribute_view.update_requested)
         self.model.updated.connect(self.attribute_view.update)
         self.model.updated.connect(self.display_widget.update)
         self.display_widget.filter_changed.connect(self.sort_model.update_filters)

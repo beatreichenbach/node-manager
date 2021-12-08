@@ -10,37 +10,6 @@ if sys.version_info[0] >= 3:
     unicode = str
 
 
-def join_url(url, *urls):
-    urls = list(urls)
-    urls.insert(0, url)
-    return '/'.join([s.strip('/') for s in urls])
-
-
-def sorted_dict(dict):
-    return sorted(dict, key=lambda i: i[0].replace(' ', '').lower())
-
-
-def to_dict(obj):
-    return json.loads(
-        json.dumps(obj, default=lambda o: getattr(o, '__dict__', str(o)))
-    )
-
-
-def unload_modules():
-    for module in list(sys.modules.values()):
-        if module and module.__name__.startswith(__package__):
-            logging.debug('Unloading module: {}'.format(module.__name__))
-            try:
-                del sys.modules[module.__name__]
-            except KeyError:
-                pass
-
-
-def title(text):
-    text = re.sub(r'(\w)([A-Z])', r'\1 \2', text).replace('_', ' ').title()
-    return text
-
-
 class FileSize(int):
     factors = {
         'KB': 1 << 10,
@@ -137,13 +106,32 @@ class Settings(QtCore.QSettings):
         self.init_defaults()
 
 
-class NoSelectionException(Exception):
-    message = 'Nothing selected.'
+def join_url(url, *urls):
+    urls = list(urls)
+    urls.insert(0, url)
+    return '/'.join([s.strip('/') for s in urls])
 
 
-class NotFoundException(Exception):
-    message = 'Not found.'
+def sorted_dict(dict):
+    return sorted(dict, key=lambda i: i[0].replace(' ', '').lower())
 
 
-if __name__ == '__main__':
-    print(FileSize())
+def to_dict(obj):
+    return json.loads(
+        json.dumps(obj, default=lambda o: getattr(o, '__dict__', str(o)))
+    )
+
+
+def unload_modules():
+    for module in list(sys.modules.values()):
+        if module and module.__name__.startswith(__package__):
+            logging.debug('Unloading module: {}'.format(module.__name__))
+            try:
+                del sys.modules[module.__name__]
+            except KeyError:
+                pass
+
+
+def title(text):
+    text = re.sub(r'(\w)([A-Z])', r'\1 \2', text).replace('_', ' ').title()
+    return text

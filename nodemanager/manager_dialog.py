@@ -1,6 +1,5 @@
 import os
 import logging
-
 from PySide2 import QtWidgets, QtCore, QtGui
 
 from . import gui_utils
@@ -159,7 +158,8 @@ class ManagerDialog(QtWidgets.QDialog):
             return
         for node_cls in sorted(plugin_utils.node_plugins(self.dcc, context)):
             widget = manager_widget.ManagerWidget(self, self.dcc, context, node_cls)
-            self.manager_tab.addTab(widget, node_cls.title())
+            title = widget.manager.display_name
+            self.manager_tab.addTab(widget, title)
         self.manager_widget = self.manager_tab.currentWidget()
 
         self.manager_tab.blockSignals(False)
@@ -170,8 +170,3 @@ class ManagerDialog(QtWidgets.QDialog):
             self.manager_widget.save_settings()
         self.manager_widget = self.manager_tab.currentWidget()
         self.manager_widget.load_settings()
-
-
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG)
-    gui_utils.show(ManagerDialog)
