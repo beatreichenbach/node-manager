@@ -142,7 +142,7 @@ cython_debug/
 *.sublime-workspace
 
 # Project files
+artstation/
 maps/
-repath/
 resource/
 *.ini

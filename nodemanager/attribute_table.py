@@ -257,7 +257,6 @@ class AttributeItemModel(QtGui.QStandardItemModel):
             item.setData(None, QtCore.Qt.DisplayRole)
 
     def set_headers(self, attribute_items):
-        logging.debug('set_headers')
         if attribute_items:
             self.attributes = attribute_items[0].attributes
             for i, attribute in enumerate(self.attributes):
@@ -293,7 +292,6 @@ class AttributeSortModel(QtCore.QSortFilterProxyModel):
 
     def filterAcceptsRow(self, source_row, source_parent):
         model = self.sourceModel()
-        logging.debug(source_row)
 
         for attribute, filter_value in self.filters.items():
             try:
