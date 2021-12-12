@@ -30,7 +30,7 @@ class Installer(object):
         self.package_path = os.path.normpath(os.path.dirname(__file__))
         self.package_name = os.path.basename(self.package_path)
         self.dcc = dcc
-        self.url = 'https://github.com/beatreichenbach/node-manager/archive/refs/heads/main.zip'
+        self.url = 'https://github.com/beatreichenbach/node-manager/archive/refs/heads/master.zip'
 
     @classmethod
     def install(cls, dcc=None):
