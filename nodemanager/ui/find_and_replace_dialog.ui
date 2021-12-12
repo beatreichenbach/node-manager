@@ -44,9 +44,9 @@
       <widget class="QLineEdit" name="replace_line"/>
      </item>
      <item row="2" column="1">
-      <widget class="QCheckBox" name="case_chk">
+      <widget class="QCheckBox" name="case_sensitive_chk">
        <property name="text">
-        <string>Ignore case</string>
+        <string>Case sensitive</string>
        </property>
       </widget>
      </item>

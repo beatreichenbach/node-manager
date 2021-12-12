@@ -24,7 +24,6 @@ class ProcessingDialog(QtWidgets.QDialog):
         self.runnable_count = 0
 
         self.threadpool = QtCore.QThreadPool(self)
-        self.threadpool.setMaxThreadCount(2)
 
         self.model = QtGui.QStandardItemModel(self)
         self.model.setHorizontalHeaderLabels(['State', 'Item'])
@@ -161,8 +160,10 @@ class ProcessingDialog(QtWidgets.QDialog):
         self.runnable_completed = 0
 
     @classmethod
-    def process(cls, nodes, runnable_cls):
+    def process(cls, nodes, runnable_cls, threads=0):
         dialog = cls(nodes, runnable_cls)
+        if threads > 0:
+            dialog.threadpool.setMaxThreadCount(threads)
         dialog.exec_()
 
     @staticmethod

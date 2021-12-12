@@ -57,11 +57,9 @@ class AttributeTableView(QtWidgets.QTableView):
     def update_requested(self):
         header_state = self.header_state
         if header_state:
-            logging.debug('store state')
             self._header_state = header_state
 
     def update(self):
-        logging.debug('update_nodes_view')
         self.update_delegates()
         # rebuild header_state from cache
         self.header_state = self._header_state
@@ -105,7 +103,6 @@ class AttributeTableView(QtWidgets.QTableView):
         action = menu.addAction('Edit')
         action.triggered.connect(lambda: self.edit(index))
 
-        # todo: add other required actions
         menu.popup(event.globalPos())
 
     @property
@@ -152,7 +149,6 @@ class AttributeTableView(QtWidgets.QTableView):
         for action in header.actions():
             header.removeAction(action)
 
-        logging.debug('update_header_actions')
         for i in range(header.count()):
             item = self._model.horizontalHeaderItem(i)
 
@@ -297,6 +293,7 @@ class AttributeSortModel(QtCore.QSortFilterProxyModel):
 
     def filterAcceptsRow(self, source_row, source_parent):
         model = self.sourceModel()
+        logging.debug(source_row)
 
         for attribute, filter_value in self.filters.items():
             try:
@@ -312,7 +309,6 @@ class AttributeSortModel(QtCore.QSortFilterProxyModel):
             if isinstance(item_value, list):
                 item_value = ''.join(item_value)
 
-
             # py 2.7
             if isinstance(filter_value, str) or isinstance(filter_value, unicode):
                 # todo: add support for expressions?
@@ -327,6 +323,7 @@ class AttributeSortModel(QtCore.QSortFilterProxyModel):
 
     def update_filters(self, filters):
         self.filters = filters
+        self.setFilterFixedString('')
 
 
 class Delegate(QtWidgets.QStyledItemDelegate):

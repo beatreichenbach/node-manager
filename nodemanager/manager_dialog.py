@@ -65,13 +65,11 @@ class ManagerDialog(QtWidgets.QDialog):
         super(ManagerDialog, self).reject()
 
     def closeEvent(self, event):
-        logging.debug('closeEvent')
         self.save_settings()
         self.manager_widget.close()
         event.accept()
 
     def save_settings(self):
-        logging.debug('save_settings')
         self.settings.setValue('manager_dialog/pos', self.pos())
         self.settings.setValue('manager_dialog/size', self.size())
 
@@ -81,7 +79,6 @@ class ManagerDialog(QtWidgets.QDialog):
         self.settings.setValue('manager_dialog/tab', tab)
 
     def load_settings(self):
-        logging.debug('load_settings')
         value = self.settings.value('manager_dialog/pos')
         if value:
             self.move(value)
@@ -102,6 +99,10 @@ class ManagerDialog(QtWidgets.QDialog):
                 if self.manager_tab.tabText(i) == value:
                     self.manager_tab.setCurrentIndex(i)
                     break
+
+        value = self.settings.value('load_on_open')
+        if value:
+            self.manager_widget.load()
 
     def edit_settings(self):
         os.startfile(self.settings.fileName())
@@ -139,7 +140,6 @@ class ManagerDialog(QtWidgets.QDialog):
         webbrowser.open('https://github.com/beatreichenbach/node-manager')
 
     def context_changed(self):
-        logging.debug('context_changed')
         self.update_tabs()
 
     def update_context(self):
@@ -148,11 +148,9 @@ class ManagerDialog(QtWidgets.QDialog):
         self.context_cmb.setCurrentIndex(-1)
 
     def update_tabs(self):
-        logging.debug('update_tabs')
-        self.manager_tab.clear()
-
         self.manager_tab.blockSignals(True)
 
+        self.manager_tab.clear()
         context = self.context_cmb.currentData()
         if not context:
             return
@@ -165,7 +163,6 @@ class ManagerDialog(QtWidgets.QDialog):
         self.manager_tab.blockSignals(False)
 
     def tab_changed(self):
-        logging.debug('tab_changed')
         if self.manager_widget:
             self.manager_widget.save_settings()
         self.manager_widget = self.manager_tab.currentWidget()

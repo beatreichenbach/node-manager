@@ -49,24 +49,15 @@ class Node(manager.FileNode, maya.Node):
     def __init__(self, node):
         super(Node, self).__init__(node)
 
-        self.locked_attributes.extend(['channels'])
-
-    @property
-    def attributes(self):
         '''
-        texture_node = cmds.shadingNode('aiImage', asTexture=True)
+        texture_node = cmds.shadingNode('file', asTexture=True)
         attrs = cmds.listAttr(texture_node, write=True, connectable=True)
         attrs = [attr for attr in attrs if attr[-1] not in ['R', 'G', 'B', 'X', 'Y', 'Z']]
         print(attrs)
         cmds.delete(texture_node)
         '''
-
-        attrs = [
-            'name',
-            'file_size',
-            'filename',
-            'directory',
-            'status',
+        self.attributes.extend([
+            'uvTilingMode',
             'alphaIsLuminance',
             'colorGain',
             'colorOffset',
@@ -74,9 +65,8 @@ class Node(manager.FileNode, maya.Node):
             'filterType',
             'aiFilter',
             'channels',
-        ]
-
-        return attrs
+        ])
+        self.locked_attributes.extend(['channels'])
 
     @property
     def filepath(self):

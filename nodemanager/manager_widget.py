@@ -37,13 +37,10 @@ class ManagerWidget(QtWidgets.QWidget):
         self.init_ui()
 
         self.action_widget.update_actions()
+        # self.action_scroll.setMinimumWidth(self.action_scroll.widget().sizeHint().width())
 
         self.connect_ui()
         self.load_settings()
-
-        # for testing purposes only
-        # todo: add setting for autoload
-        # self.load()
 
     def init_ui(self):
         gui_utils.load_ui(self, 'manager_widget.ui')
@@ -60,6 +57,7 @@ class ManagerWidget(QtWidgets.QWidget):
         # action widget
         self.action_scroll = VerticalScrollArea()
         self.action_widget = ActionWidget(self, self.manager, self.attribute_view)
+        self.action_widget.updated.connect(self.action_scroll.update)
         self.action_scroll.setWidget(self.action_widget)
         self.action_scroll.setMinimumSize(self.action_scroll.sizeHint())
         self.action_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
@@ -105,9 +103,7 @@ class ManagerWidget(QtWidgets.QWidget):
         self.footer_lay.setStretch(1, 0)
 
         # todo:
-        self.limit_lbl.setVisible(False)
-        self.selection_chk.setVisible(False)
-        self.visible_chk.setVisible(False)
+        self.visible_chk.setEnabled(False)
 
     def connect_ui(self):
         self.load_btn.clicked.connect(self.load)
@@ -121,7 +117,6 @@ class ManagerWidget(QtWidgets.QWidget):
         event.accept()
 
     def save_settings(self):
-        logging.debug('save_settings_widget')
         self.settings.setValue('manager_widget/splitter', self.splitter.sizes())
 
         self.settings.beginGroup(self.plugin)
@@ -142,7 +137,6 @@ class ManagerWidget(QtWidgets.QWidget):
         self.settings.endGroup()
 
     def load_settings(self):
-        logging.debug('load_settings_widget')
         value = self.settings.list('manager_widget/splitter')
         # setting splitter size when identical seems to cause it to reset
         if value and self.splitter.sizes() != value:
@@ -166,16 +160,14 @@ class ManagerWidget(QtWidgets.QWidget):
         self.settings.endGroup()
 
     def load(self):
-        logging.debug('load')
         self.status_bar.showMessage('Loading nodes...')
-        # threadpool = QtCore.QThreadPool(self)
-        # runnable = Runnable(self._load)
-        # threadpool.start(runnable)
 
-        # self.save_settings()
-
+        options = {
+            'selection': self.selection_chk.isChecked(),
+            'visible': self.visible_chk.isChecked(),
+        }
         try:
-            attribute_items = self.manager.nodes()
+            attribute_items = self.manager.nodes(options=options)
             self.model.set_items(attribute_items)
         except RuntimeError as exception:
             message_box = QtWidgets.QMessageBox(
@@ -187,20 +179,12 @@ class ManagerWidget(QtWidgets.QWidget):
             message_box.setDetailedText(traceback.print_exc())
             message_box.exec_()
 
-        # self.load_settings()
         self.status_bar.clearMessage()
 
 
-# class Runnable(QtCore.QRunnable):
-#     def __init__(self, func):
-#         super(Runnable, self).__init__()
-#         self.func = func
-
-#     def run(self):
-#         self.func()
-
-
 class ActionWidget(QtWidgets.QWidget):
+    updated = QtCore.Signal()
+
     def __init__(self, manager_widget, manager, attribute_view, parent=None):
         super(ActionWidget, self).__init__(parent)
         self.manager_widget = manager_widget
@@ -235,6 +219,7 @@ class ActionWidget(QtWidgets.QWidget):
 
         self.layout().addStretch(1)
         self.resize(self.sizeHint())
+        self.updated.emit()
 
     def trigger_action(self, action):
         action.trigger(self.attribute_view.selected_attribute_items)
@@ -242,7 +227,7 @@ class ActionWidget(QtWidgets.QWidget):
     def action_triggered(self, attribute_items, update):
         if update == manager.Action.UPDATE_MODEL:
             self.attribute_view._model.update_items(attribute_items)
-        elif self.update == manager.Action.RELOAD_MODEL:
+        elif update == manager.Action.RELOAD_MODEL:
             self.manager_widget.load()
 
 
@@ -342,3 +327,7 @@ class VerticalScrollArea(QtWidgets.QScrollArea):
                     min_width += self.verticalScrollBar().sizeHint().width()
                 self.setMinimumWidth(min_width)
         return super(VerticalScrollArea, self).eventFilter(watched, event)
+
+    def update(self):
+        min_width = self.widget().sizeHint().width()
+        self.setMinimumWidth(min_width)

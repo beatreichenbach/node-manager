@@ -107,6 +107,7 @@ class Manager(manager.Manager):
     def __init__(self, *args):
         super(Manager, self).__init__(*args)
 
+        self.addAction('Node', 'Select', select, IGNORE_UPDATE)
         self.addAction('Node', 'Remove', remove, RELOAD_MODEL)
         self.addAction('Node', 'Graph Nodes', graph_nodes, IGNORE_UPDATE)
 
@@ -118,11 +119,24 @@ class Manager(manager.Manager):
 
     def nodes(self, options={}, node_cls=Node, node_type=''):
         self.load_plugin()
-        nodes = []
-        maya_nodes = cmds.ls(type=node_type)
-        for maya_node in maya_nodes:
-            node = node_cls(maya_node)
-            nodes.append(node)
+
+        if options.get('selection'):
+            maya_nodes = cmds.ls(selection=True, type=node_type)
+
+            try:
+                shapes = cmds.ls(shapes=True, selection=True, dagObjects=True)
+                shading_engines = cmds.listConnections(shapes, type='shadingEngine')
+                history = cmds.listHistory(shading_engines)
+                relative_nodes = cmds.ls(history, type=node_type)
+                maya_nodes.extend([node for node in relative_nodes if node not in maya_nodes])
+            except RuntimeError:
+                pass
+
+        else:
+            maya_nodes = cmds.ls(type=node_type)
+
+        nodes = [node_cls(maya_node) for maya_node in maya_nodes]
+
         return nodes
 
 
@@ -223,19 +237,21 @@ class ProcessingNode(object):
 
 
 def graph_nodes(nodes):
-    cmds.select(nodes, replace=True)
-
     editor = mel.eval('getHypershadeNodeEditor()')
     if editor:
         for node in nodes:
-            cmds.nodeEditor(editor, edit=True, frameAll=True, addNode=node)
+            cmds.nodeEditor(editor, edit=True, frameAll=True, addNode=node.node)
 
 
 def remove(nodes):
-    # todo: keep connections
+    # todo: keep connections?
     for node in nodes:
-        if node.exists:
-            cmds.delete(node)
+        cmds.delete(node.node)
+
+
+def select(nodes):
+    maya_nodes = [node.node for node in nodes]
+    cmds.select(maya_nodes, replace=True)
 
 
 def generate_tiled(nodes):
@@ -244,17 +260,17 @@ def generate_tiled(nodes):
 
 
 def relocate(nodes):
-    # todo: add parent
     path = nodes[0].directory
     values = util_dialog.RelocateDialog.get_values(path)
 
-    if not values or not os.path.isdir(values['path']):
+    if not values:
         return
 
     runnable = RelocateRunnable
     runnable.kwargs = values
 
-    processing.ProcessingDialog.process(nodes, runnable)
+    # limit threads to preserve file io
+    processing.ProcessingDialog.process(nodes, runnable, threads=2)
 
 
 def locate(nodes):
@@ -267,4 +283,5 @@ def locate(nodes):
     runnable = LocateRunnable
     runnable.kwargs = values
 
-    processing.ProcessingDialog.process(nodes, runnable)
+    # limit threads to preserve file io
+    processing.ProcessingDialog.process(nodes, runnable, threads=2)

@@ -22,7 +22,7 @@ class FindAndReplaceDialog(QtWidgets.QDialog):
         values = {}
         values['find'] = self.find_line.text()
         values['replace'] = self.replace_line.text()
-        values['ignorecase'] = self.case_chk.isChecked()
+        values['ignorecase'] = not self.case_sensitive_chk.isChecked()
         values['regex'] = self.regex_chk.isChecked()
         return values
 

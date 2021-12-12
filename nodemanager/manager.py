@@ -39,13 +39,11 @@ class Action(QtCore.QObject):
         return self.label
 
     def trigger(self, nodes):
-        logging.debug('trigger')
         # todo: try except would be faster
         nodes = [node for node in nodes if node.exists]
         if not nodes:
             return
         self.func(nodes)
-        logging.debug([self.label, self.update, self.func])
         self.triggered.emit(nodes, self.update)
 
 
@@ -74,14 +72,6 @@ class Manager(object):
             actions.append(action)
         self.actions[group] = actions
 
-    def runAction(self, func, update_model):
-        nodes = [node for node in self.selected_nodes() if node.exists]
-        if not nodes:
-            return
-        func(nodes)
-        if update_model:
-            self.model.update()
-
     def addFilter(self, attribute):
         if attribute not in self.filters:
             self.filters.append(attribute)
@@ -92,10 +82,15 @@ class Manager(object):
 
 class Node(object):
     node = None
+    attributes = []
     locked_attributes = []
 
     def __init__(self, node):
         self.node = node
+
+        self.attributes = [
+            'name'
+            ]
 
     def __repr__(self):
         return 'Node({})'.format(self.name)
@@ -114,6 +109,12 @@ class FileNode(Node):
     def __init__(self, node):
         super(FileNode, self).__init__(node)
 
+        self.attributes.extend([
+            'status',
+            'file_size',
+            'filename',
+            'directory',
+            ])
         self.locked_attributes.extend(['status', 'file_size'])
 
     @property
@@ -153,9 +154,12 @@ class FileNode(Node):
         if self.is_file_sequence:
             regex = self.file_sequence_regex
 
-            for filename in os.listdir(self.directory):
-                if regex.search(filename):
-                    yield os.path.join(self.directory, filename)
+            try:
+                for filename in os.listdir(self.directory):
+                    if regex.search(filename):
+                        yield os.path.join(self.directory, filename)
+            except OSError:
+                return
         else:
             yield self.filepath
 
@@ -173,11 +177,9 @@ class FileNode(Node):
 
     @property
     def status(self):
-        filepath = self.real_filepath
-
-        if not filepath:
+        if not self.filepath:
             return FileStatus.NOT_SET
-        elif os.path.isfile(filepath):
+        elif os.path.isfile(self.real_filepath):
             return FileStatus.EXISTS
         else:
             return FileStatus.NOT_FOUND
@@ -235,13 +237,25 @@ class LocateRunnable(processing.ProcessingRunnable):
 
 
 class RelocateRunnable(processing.ProcessingRunnable):
+    moved = []
+
     def process(self):
-        target_dir = self.node.directory
+        target_dir = self.kwargs['path']
+        update_directory = False
+
+        if self.node.filepath in RelocateRunnable.moved:
+            update_directory = True
+
         for source_path in self.node.file_sequence:
             if not self.running:
                 return
-            target_path = os.path.join(self.kwargs['path'], os.path.basename(source_path))
-            target_dir = os.path.dirname(target_path)
+
+            if self.kwargs['parent']:
+                parent_dir = os.path.basename(os.path.dirname(source_path))
+                if parent_dir:
+                    target_dir = os.path.join(target_dir, parent_dir)
+            target_path = os.path.join(target_dir, os.path.basename(source_path))
+
             if not os.path.exists(target_dir):
                 self.logger.info('Directory created: {}'.format(target_dir))
                 os.makedirs(target_dir)
@@ -258,13 +272,20 @@ class RelocateRunnable(processing.ProcessingRunnable):
                 else:
                     self.logger.info('File moved: {}'.format(target_path))
                     shutil.move(source_path, target_dir)
+                    # other threads might have already moved the files
+                    RelocateRunnable.moved.append(self.node.filepath)
+                update_directory = True
 
-        if not self.kwargs['ignore_update']:
+        if not self.kwargs['ignore_update'] and update_directory:
             self.node.directory = target_dir
         return True
 
     def display_text(self):
         return self.node.filepath
+
+    @staticmethod
+    def reset():
+        RelocateRunnable.moved = []
 
 
 class TiledRunnable(processing.ProcessingRunnable):
@@ -273,7 +294,7 @@ class TiledRunnable(processing.ProcessingRunnable):
     def process(self):
         maketx_path = r'C:\Program Files\Autodesk\Arnold\maya2022\bin\maketx.exe'
 
-        output_dir = re.sub(r'[\\/]raw[\\/]', 'tiled', self.node.directory)
+        output_dir = re.sub(r'([\\\/])raw([\\\/]|$)', r'\g<1>tiled\g<2>', self.node.directory)
 
         input_paths = []
 
@@ -313,6 +334,16 @@ class TiledRunnable(processing.ProcessingRunnable):
                 self.logger.info('Skipping... File already exists.')
                 continue
 
+            # is the file being process by another runnable?
+            if input_path in TiledRunnable.processing:
+                self.logger.info('Skipping... File already being processed by a different thread.')
+                continue
+            TiledRunnable.processing.append(input_path)
+
+            if not os.path.isdir(output_dir):
+                os.makedirs(output_dir)
+
+            # the command line arguments
             command_args = [
                 maketx_path,
                 '-v',
@@ -329,15 +360,9 @@ class TiledRunnable(processing.ProcessingRunnable):
 
             self.logger.info(command)
 
-            # is the file being process by another runnable?
-            if input_path in TiledRunnable.processing:
-                self.logger.info('Skipping... File already being processed by a different thread.')
-                continue
-            TiledRunnable.processing.append(input_path)
-
             if self.popen(command_args):
                 # any return code other than None means there was an error.
-                return
+                raise Exception('The external command returned an error code.')
         name, ext = os.path.splitext(self.node.filename)
         outout_filename = '{}.tx'.format(name)
 
@@ -404,17 +429,17 @@ def find_and_replace(nodes):
 
 
 def relocate(nodes):
-    # todo: add parent
     path = nodes[0].directory
     values = util_dialog.RelocateDialog.get_values(path)
 
-    if not values or not os.path.isdir(values['path']):
+    if not values:
         return
 
     runnable = RelocateRunnable
     runnable.kwargs = values
 
-    processing.ProcessingDialog.process(nodes, runnable)
+    # limit threads to preserve file io
+    processing.ProcessingDialog.process(nodes, runnable, threads=2)
 
 
 def locate(nodes):
@@ -427,7 +452,8 @@ def locate(nodes):
     runnable = LocateRunnable
     runnable.kwargs = values
 
-    processing.ProcessingDialog.process(nodes, runnable)
+    # limit threads to preserve file io
+    processing.ProcessingDialog.process(nodes, runnable, threads=2)
 
 
 def generate_tiled(nodes):
@@ -436,14 +462,13 @@ def generate_tiled(nodes):
 
 
 def switch_raw(nodes):
-    extensions = ['jpg', 'png', 'tif', 'tiff', 'exr']
+    extensions = ['jpg', 'png', 'tif', 'tiff', 'exr', 'psd']
     for node in nodes:
-        raw_dir = re.sub(r'[\\/]tiled[\\/]', 'raw', node.directory)
+        raw_dir = re.sub(r'([\\\/])tiled([\\\/]|$)', r'\g<1>raw\g<2>', node.directory)
 
         pattern = node.file_sequence_regex.pattern
-        base, ext = os.path.splitext(pattern)
         for extension in extensions:
-            file_pattern = '{}.{}'.format(base, extension)
+            file_pattern = re.sub(r'\.[^.]+$', '.{}'.format(extension), pattern)
 
             for filename in os.listdir(raw_dir):
                 if re.match(file_pattern, filename):
@@ -460,7 +485,7 @@ def switch_raw(nodes):
 
 def switch_tiled(nodes):
     for node in nodes:
-        tiled_dir = re.sub(r'[\\/]raw[\\/]', 'tiled', node.directory)
+        tiled_dir = re.sub(r'([\\\/])raw([\\\/]|$)', r'\g<1>tiled\g<2>', node.directory)
 
         base, ext = os.path.splitext(node.filename)
         tiled_filename = '{}.tx'.format(base)
