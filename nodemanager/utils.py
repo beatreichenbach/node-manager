@@ -75,7 +75,8 @@ class Settings(QtCore.QSettings):
 
     def init_defaults(self):
         default_values = {
-            'load_on_open': False
+            'load_on_open': False,
+            'maketx_path': r'C:\Program Files\Autodesk\Arnold\maya2022\bin\maketx.exe',
         }
         for key, value in default_values.items():
             if key not in self.childKeys():

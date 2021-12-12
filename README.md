@@ -60,7 +60,8 @@ This generates .tx files of the selected nodes. If the directory contains `raw` 
 
 ## Settings
 The important settings for the user are listed under `[general]` or the current dcc header such as `[maya]`.\
-`load_on_open`: Should the nodes be loaded when the window is opened.
+`load_on_open`: Should the nodes be loaded when the window is opened.\
+`maketx_path`: the path to maketx.exe
 
 maya:
 `use_bump2d`: set this to true if you prefer the native bump2d node.

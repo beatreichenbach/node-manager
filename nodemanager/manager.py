@@ -167,7 +167,7 @@ class FileNode(Node):
     def file_sequence_regex(self):
         # to match escaped filename escape the escaped tags
         tags = '|'.join(map(re.escape, map(re.escape, self._file_sequence_tags)))
-        file_pattern = re.sub(tags, r'\d+', re.escape(self.filename), re.IGNORECASE)
+        file_pattern = re.sub(tags, r'\\d+', re.escape(self.filename), re.IGNORECASE)
         regex = re.compile(file_pattern)
         return regex
 
@@ -292,7 +292,11 @@ class TiledRunnable(processing.ProcessingRunnable):
     processing = []
 
     def process(self):
-        maketx_path = r'C:\Program Files\Autodesk\Arnold\maya2022\bin\maketx.exe'
+        settings = utils.Settings()
+        maketx_path = settings.value('maketx_path')
+
+        if not os.path.isfile(maketx_path):
+            raise OSError('maketx.exe not found. Set custom path in settings.')
 
         output_dir = re.sub(r'([\\\/])raw([\\\/]|$)', r'\g<1>tiled\g<2>', self.node.directory)
 
