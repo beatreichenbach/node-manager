@@ -37,6 +37,8 @@ RELOAD_MODEL = manager.Action.RELOAD_MODEL
 
 
 class Node(manager.Node):
+    # _name = None
+
     def __getattr__(self, name):
         return self._get_node_attr(name)
 
@@ -67,7 +69,15 @@ class Node(manager.Node):
         elif attr_type == 'enum':
             enum_strings = cmds.attributeQuery(name, node=self.node, listEnum=True)
             names = enum_strings[0].split(':')
-            class_ = Enum(name.title(), names, start=0)
+            # sometimes enum_strings returns ['Sharp edges and corners=1:Sharp edges']
+            # add support for alt index
+
+            start = 0
+            if names and '=' in names[0]:
+                names[0], start = names[0].split('=')
+                start = int(start)
+
+            class_ = Enum(name.title(), names, start=start)
             value = class_(value)
         return value
 
@@ -90,11 +100,15 @@ class Node(manager.Node):
 
     @property
     def name(self):
+        # if self._name is None:
+        #     self._name = self.node.rsplit('|')[-1]
+        # return self._name
         return self.node.rsplit('|')[-1]
 
     @name.setter
     def name(self, value):
         self.node = cmds.rename(self.node, value)
+        # self._name = value
 
     @property
     def exists(self):

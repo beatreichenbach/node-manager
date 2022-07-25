@@ -69,7 +69,10 @@ class AttributeTableView(QtWidgets.QTableView):
         if node:
             for i in range(self._model.columnCount()):
                 attribute = self._model.headerData(i, QtCore.Qt.Horizontal, QtCore.Qt.UserRole + 1)
-                value = getattr(node, attribute)
+                try:
+                    value = getattr(node, attribute)
+                except AttributeError:
+                    value = None
                 delegate = self.delegate_from_value(value, parent=self)
                 self.setItemDelegateForColumn(i, delegate)
 
@@ -188,8 +191,11 @@ class AttributeItemModel(QtGui.QStandardItemModel):
         data = super(AttributeItemModel, self).data(index, role)
         if data is None and role in (QtCore.Qt.DisplayRole, QtCore.Qt.EditRole):
             attribute_item = self.attribute_item_from_index(index)
-            attribute = self.attribute_from_index(index)
-            data = getattr(attribute_item, attribute)
+            try:
+                attribute = self.attribute_from_index(index)
+                data = getattr(attribute_item, attribute)
+            except AttributeError:
+                data = '---'
             super(AttributeItemModel, self).setData(index, data, role)
         return data
 
@@ -219,6 +225,7 @@ class AttributeItemModel(QtGui.QStandardItemModel):
     def set_items(self, attribute_items):
         self.update_requested.emit()
         self.clear()
+        self.set_headers(attribute_items)
         for attribute_item in attribute_items:
             items = []
             for i, attribute in enumerate(attribute_item.attributes):
@@ -235,7 +242,6 @@ class AttributeItemModel(QtGui.QStandardItemModel):
             if items:
                 self.appendRow(items)
 
-        self.set_headers(attribute_items)
         self.updated.emit()
 
     def update(self):
@@ -286,9 +292,13 @@ class AttributeSortModel(QtCore.QSortFilterProxyModel):
 
     def lessThan(self, left, right):
         # load requested item / override data
+        return False
         left_value = self.value(self.sourceModel().data(left))
         right_value = self.value(self.sourceModel().data(right))
-        return left_value < right_value
+        try:
+            return left_value < right_value
+        except TypeError:
+            return False
 
     def filterAcceptsRow(self, source_row, source_parent):
         model = self.sourceModel()
@@ -321,7 +331,7 @@ class AttributeSortModel(QtCore.QSortFilterProxyModel):
 
     def update_filters(self, filters):
         self.filters = filters
-        self.setFilterFixedString('')
+        self.invalidate()
 
 
 class Delegate(QtWidgets.QStyledItemDelegate):

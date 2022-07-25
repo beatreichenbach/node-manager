@@ -63,6 +63,7 @@ class Node(manager.FileNode, maya.Node):
             'colorOffset',
             'colorSpace',
             'filterType',
+            'ignoreColorSpaceFileRules',
             'aiFilter',
             'channels',
         ])

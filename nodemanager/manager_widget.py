@@ -121,6 +121,8 @@ class ManagerWidget(QtWidgets.QWidget):
 
         self.settings.beginGroup(self.plugin)
 
+        self.settings.setValue('selection', self.selection_chk.isChecked())
+
         headers = self.attribute_view.header_state
         if headers:
             attributes = []
@@ -144,6 +146,7 @@ class ManagerWidget(QtWidgets.QWidget):
 
         self.settings.beginGroup(self.plugin)
 
+        self.selection_chk.setChecked(self.settings.bool('selection'))
         attributes = self.settings.list('header_attributes')
         widths = self.settings.list('header_widths')
         visibilities = self.settings.list('header_visibilities')
@@ -166,6 +169,7 @@ class ManagerWidget(QtWidgets.QWidget):
             'selection': self.selection_chk.isChecked(),
             'visible': self.visible_chk.isChecked(),
         }
+        attribute_items = []
         try:
             attribute_items = self.manager.nodes(options=options)
             self.model.set_items(attribute_items)
@@ -180,6 +184,11 @@ class ManagerWidget(QtWidgets.QWidget):
             message_box.exec_()
 
         self.status_bar.clearMessage()
+
+        num_items = len(attribute_items)
+        self.status_bar.showMessage(
+            'Loaded {} item{}'.format(num_items, 's' if num_items != 1 else '')
+            )
 
 
 class ActionWidget(QtWidgets.QWidget):
@@ -231,6 +240,10 @@ class ActionWidget(QtWidgets.QWidget):
             self.manager_widget.load()
 
 
+class IntEdit(QtWidgets.QLineEdit):
+    pass
+
+
 class DisplayWidget(QtWidgets.QWidget):
     filter_changed = QtCore.Signal(dict)
 
@@ -269,7 +282,10 @@ class DisplayWidget(QtWidgets.QWidget):
             return
 
         for attribute in node.attributes:
-            value = getattr(node, str(attribute))
+            try:
+                value = getattr(node, str(attribute))
+            except AttributeError:
+                continue
 
             widget = None
 
@@ -287,6 +303,12 @@ class DisplayWidget(QtWidgets.QWidget):
                 widget.setCurrentIndex(0)
                 widget.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
                 signal = widget.currentTextChanged
+
+            elif isinstance(value, int):
+                widget = IntEdit(self)
+                widget.setValidator(QtGui.QIntValidator())
+                widget.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+                signal = widget.textChanged
 
             elif isinstance(value, Enum):
                 widget = QtWidgets.QComboBox(self)
@@ -308,7 +330,11 @@ class DisplayWidget(QtWidgets.QWidget):
 
         for attribute, widget in self.filter_widgets.items():
             value = None
-            if isinstance(widget, QtWidgets.QLineEdit):
+
+            if isinstance(widget, IntEdit):
+                value = widget.text()
+                value = int(value) if value else None
+            elif isinstance(widget, QtWidgets.QLineEdit):
                 value = widget.text()
             elif isinstance(widget, QtWidgets.QComboBox):
                 value = widget.currentData()
